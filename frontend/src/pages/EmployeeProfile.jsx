@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import EmployeeHorariosTab from './EmployeeHorariosTab';
 import {
   ArrowLeft, Search, User, Briefcase, FileText, Calendar, Target,
   ClipboardList, Clock, CheckSquare, BarChart3, Settings, Shield,
@@ -282,6 +283,8 @@ const EmployeeProfile = () => {
         return renderFichajesContent();
       case 'evaluaciones':
         return renderEvaluacionesContent();
+      case 'horarios':
+        return <EmployeeHorariosTab employeeId={employeeId} isAdmin={isAdmin} />;
       default:
         return renderUnderConstructionContent();
     }

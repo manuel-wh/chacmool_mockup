@@ -10,6 +10,8 @@ import KPIsView from './pages/KPIsView';
 import Evaluations360View from './pages/Evaluations360View';
 import PDIView from './pages/PDIView';
 import EmployeeProfile from './pages/EmployeeProfile';
+import Asistencia from './pages/Asistencia';
+import AsistenciaConfig from './pages/AsistenciaConfig';
 import { 
   Users, 
   Target, 
@@ -985,6 +987,7 @@ const Sidebar = ({ isAdmin, setIsAdmin }) => {
     { path: "/evaluations", icon: MessageSquare, label: "Evaluaciones 360", description: "Plantillas y enlaces", roles: ['admin', 'empleado'] },
     { path: "/pdi", icon: Target, label: "PDI", description: "Plan de Desarrollo", roles: ['admin'] },
     { path: "/aciertos-desaciertos", icon: ClipboardList, label: "Aciertos y Desaciertos", description: "Evaluación bilateral", roles: ['admin'] },
+    { path: "/asistencia", icon: Clock, label: "Asistencia", description: "Fichaje y horarios", roles: ['admin', 'empleado', 'manager'] },
     { path: "/kpis", icon: Target, label: "KPIs", description: "Indicadores clave", roles: ['admin'] },
   ];
   
@@ -1496,6 +1499,8 @@ const AppContent = () => {
             <Route path="/evaluations" element={<Evaluations360View isAdmin={isAdmin} />} />
             <Route path="/pdi" element={<PDIView isAdmin={isAdmin} />} />
             <Route path="/aciertos-desaciertos" element={<AciertosDesaciertosView isAdmin={isAdmin} />} />
+            <Route path="/asistencia" element={<Asistencia isAdmin={isAdmin} />} />
+            <Route path="/asistencia/configuracion" element={<AsistenciaConfig />} />
             <Route path="/kpis" element={<KPIsView isAdmin={isAdmin} />} />
             <Route path="/my-profile" element={<MyProfileResultsView isAdmin={isAdmin} />} />
             <Route path="/manual-eval" element={<ManualEvaluation />} />

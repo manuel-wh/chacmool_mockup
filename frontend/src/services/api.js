@@ -511,3 +511,67 @@ export const empleadoAAPI = {
   }
 };
 
+
+// ============================================================
+//                  ASISTENCIA / TIME TRACKING
+// ============================================================
+const _req = async (path, opts = {}) => {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: getAuthHeaders(),
+    ...opts,
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j.detail || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  return res.json();
+};
+
+export const asistenciaAPI = {
+  // Schedules
+  listSchedules: () => _req('/api/asistencia/schedules'),
+  getSchedule: (id) => _req(`/api/asistencia/schedules/${id}`),
+  createSchedule: (data) => _req('/api/asistencia/schedules', {
+    method: 'POST', body: JSON.stringify(data),
+  }),
+  updateSchedule: (id, data) => _req(`/api/asistencia/schedules/${id}`, {
+    method: 'PUT', body: JSON.stringify(data),
+  }),
+  deleteSchedule: (id) => _req(`/api/asistencia/schedules/${id}`, { method: 'DELETE' }),
+
+  // Employee schedule
+  getEmployeeSchedule: (employeeId) => _req(`/api/asistencia/employees/${employeeId}/schedule`),
+  assignSchedule: (employeeId, scheduleId, assignedFrom = null) => _req(
+    `/api/asistencia/employees/${employeeId}/schedule`,
+    { method: 'POST', body: JSON.stringify({ schedule_id: scheduleId, assigned_from: assignedFrom }) }
+  ),
+  removeEmployeeSchedule: (employeeId) => _req(
+    `/api/asistencia/employees/${employeeId}/schedule`, { method: 'DELETE' }
+  ),
+
+  // Attendance / fichaje
+  current: () => _req('/api/asistencia/attendance/current'),
+  clockIn: () => _req('/api/asistencia/attendance/clock-in', { method: 'POST' }),
+  clockOut: () => _req('/api/asistencia/attendance/clock-out', { method: 'POST' }),
+  pause: () => _req('/api/asistencia/attendance/pause', { method: 'POST' }),
+  resume: () => _req('/api/asistencia/attendance/resume', { method: 'POST' }),
+  records: ({ employeeId = null, dateFrom, dateTo } = {}) => {
+    const qs = new URLSearchParams();
+    if (employeeId) qs.set('employee_id', employeeId);
+    if (dateFrom) qs.set('date_from', dateFrom);
+    if (dateTo) qs.set('date_to', dateTo);
+    return _req(`/api/asistencia/attendance/records?${qs.toString()}`);
+  },
+  summary: ({ employeeId = null, dateFrom, dateTo }) => {
+    const qs = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+    if (employeeId) qs.set('employee_id', employeeId);
+    return _req(`/api/asistencia/attendance/summary?${qs.toString()}`);
+  },
+
+  // Devices
+  getDevices: () => _req('/api/asistencia/devices'),
+  updateDevices: (data) => _req('/api/asistencia/devices', {
+    method: 'PUT', body: JSON.stringify(data),
+  }),
+};
