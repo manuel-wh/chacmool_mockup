@@ -7,7 +7,7 @@ import requests
 import os
 import time
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://kpi-360-hub.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://text-viewer-21.preview.emergentagent.com').rstrip('/')
 
 ADMIN_CREDENTIALS = {"email": "admin@empresa.com", "password": "admin123"}
 ADMIN_EMP_CREDENTIALS = {"email": "maria@empresa.com", "password": "maria123"}
