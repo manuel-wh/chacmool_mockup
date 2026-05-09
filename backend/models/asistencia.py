@@ -118,11 +118,11 @@ class KioskAccessCreateRequest(BaseModel):
 
 
 class KioskAccessUpdateRequest(BaseModel):
-    access_code: str = Field(..., min_length=3, max_length=24)
+    access_code: str = Field(..., min_length=4, max_length=12)
 
 
 class KioskPunchRequest(BaseModel):
-    access_code: str = Field(..., min_length=3, max_length=24)
+    access_code: str = Field(..., min_length=4, max_length=12)
     pin: str = Field(..., min_length=4, max_length=8)
 
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { asistenciaAPI } from '../services/api';
 import EmployeeHorariosTab from './EmployeeHorariosTab';
 import {
   ArrowLeft, Search, User, Briefcase, FileText, Calendar, Target,
@@ -169,6 +170,12 @@ const EmployeeProfile = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [kioskAccess, setKioskAccess] = useState(null);
+  const [kioskCodeDraft, setKioskCodeDraft] = useState('');
+  const [kioskLoading, setKioskLoading] = useState(false);
+  const [kioskBusy, setKioskBusy] = useState(false);
+  const [kioskError, setKioskError] = useState('');
+
   const [activeEvalTab, setActiveEvalTab] = useState('cuestionarios');
 
   // Obtener empleado actual
@@ -208,10 +215,78 @@ const EmployeeProfile = () => {
       address: currentEmployee.address,
       postalCode: currentEmployee.postalCode,
       colony: currentEmployee.colony,
-      municipality: currentEmployee.municipality
+      municipality: currentEmployee.municipality,
     });
     setIsEditing(false);
   }, [employeeId]);
+
+  const loadKioskAccess = async () => {
+    setKioskLoading(true);
+    setKioskError('');
+    try {
+      const data = await asistenciaAPI.getEmployeeKioskAccess(employeeId);
+      setKioskAccess(data || null);
+      setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
+    } catch (e) {
+      setKioskError(e.message);
+    } finally {
+      setKioskLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSidebarSection === 'accesos') {
+      loadKioskAccess();
+    }
+  }, [activeSidebarSection, employeeId]);
+
+  const generateKioskCredentials = async () => {
+    setKioskBusy(true);
+    setKioskError('');
+    try {
+      const code = kioskCodeDraft ? kioskCodeDraft.replace(/\D/g, '') : null;
+      const data = await asistenciaAPI.generateEmployeeKioskAccess(employeeId, code);
+      setKioskAccess(data);
+      setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
+    } catch (e) {
+      setKioskError(e.message);
+    } finally {
+      setKioskBusy(false);
+    }
+  };
+
+  const saveKioskCode = async () => {
+    const numericCode = kioskCodeDraft.replace(/\D/g, '');
+    if (numericCode.length < 4) {
+      setKioskError('El código debe tener al menos 4 dígitos.');
+      return;
+    }
+    setKioskBusy(true);
+    setKioskError('');
+    try {
+      const data = await asistenciaAPI.updateEmployeeKioskAccess(employeeId, numericCode);
+      setKioskAccess(data);
+      setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
+    } catch (e) {
+      setKioskError(e.message);
+    } finally {
+      setKioskBusy(false);
+    }
+  };
+
+  const regenerateKioskPin = async () => {
+    setKioskBusy(true);
+    setKioskError('');
+    try {
+      const data = await asistenciaAPI.regenerateEmployeeKioskPin(employeeId);
+      setKioskAccess(data);
+      setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
+    } catch (e) {
+      setKioskError(e.message);
+    } finally {
+      setKioskBusy(false);
+    }
+  };
 
   // Filtrar empleados para búsqueda
   const filteredEmployees = mockEmployeesData.filter(emp => 
@@ -539,6 +614,106 @@ const EmployeeProfile = () => {
               </div>
             </div>
           </div>
+        </div>
+      );
+    }
+
+    if (activeSidebarSection === 'accesos') {
+      return (
+        <div className="space-y-6" data-testid="perfil-accesos-section">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">Accesos de kiosco</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Usa este código y PIN para registrar entrada/salida en la vista de kiosco.
+              </p>
+            </div>
+            <button
+              onClick={loadKioskAccess}
+              className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50"
+              disabled={kioskLoading || kioskBusy}
+            >
+              Actualizar
+            </button>
+          </div>
+
+          {kioskError && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {kioskError}
+            </div>
+          )}
+
+          {kioskLoading ? (
+            <div className="py-8 text-center text-slate-400">Cargando accesos…</div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Código de acceso (numérico)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={kioskCodeDraft}
+                    onChange={(e) => setKioskCodeDraft(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                    readOnly={!isAdmin}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white disabled:bg-slate-50"
+                    placeholder="Ej: 123456"
+                    data-testid="profile-kiosk-code"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">PIN</label>
+                  <input
+                    type="text"
+                    value={kioskAccess?.pin || '----'}
+                    readOnly
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 tracking-[0.3em] font-semibold"
+                    data-testid="profile-kiosk-pin"
+                  />
+                </div>
+              </div>
+
+              {!kioskAccess && (
+                <div className="text-sm text-slate-500">
+                  Aún no hay credenciales creadas para este empleado.
+                </div>
+              )}
+
+              {isAdmin ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={generateKioskCredentials}
+                    disabled={kioskBusy}
+                    className="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-60"
+                    data-testid="profile-kiosk-generate"
+                  >
+                    {kioskAccess ? 'Regenerar código + PIN' : 'Generar código + PIN'}
+                  </button>
+                  <button
+                    onClick={saveKioskCode}
+                    disabled={kioskBusy || !kioskAccess}
+                    className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                    data-testid="profile-kiosk-save-code"
+                  >
+                    Guardar código
+                  </button>
+                  <button
+                    onClick={regenerateKioskPin}
+                    disabled={kioskBusy || !kioskAccess}
+                    className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                    data-testid="profile-kiosk-regenerate-pin"
+                  >
+                    Regenerar PIN
+                  </button>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500">
+                  Solo el administrador puede editar estas credenciales.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }

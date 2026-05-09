@@ -102,17 +102,13 @@ def _planned_seconds_for_day(schedule: dict, weekday: int) -> int:
 
 
 def _normalize_access_code(code: str) -> str:
-    raw = (code or "").strip().upper()
-    filtered = "".join(ch for ch in raw if ch.isalnum())
-    return filtered[:24]
+    raw = (code or "").strip()
+    filtered = "".join(ch for ch in raw if ch.isdigit())
+    return filtered[:12]
 
 
 def _generate_access_code(prefix: Optional[str] = None) -> str:
-    base = _normalize_access_code(prefix or "")[:6]
-    suffix = "".join(secrets.choice(string.digits) for _ in range(5))
-    if not base:
-        base = "EMP"
-    return f"{base}{suffix}"
+    return "".join(secrets.choice(string.digits) for _ in range(6))
 
 
 def _generate_pin() -> str:
@@ -498,8 +494,12 @@ async def attendance_summary(
 @router.get("/employees/{employee_id}/kiosk-access", response_model=Optional[KioskAccessCredential])
 async def get_employee_kiosk_access(
     employee_id: str,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_active_user),
 ):
+    current_eid = await _get_user_employee_id(current_user)
+    if current_user.get("role") != "admin" and employee_id != current_eid:
+        raise HTTPException(403, "Sin permisos para ver accesos de otros empleados.")
+
     doc = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0})
     if not doc:
         return None
@@ -517,6 +517,9 @@ async def generate_employee_kiosk_access(
         raise HTTPException(404, "Employee not found")
 
     requested_code = _normalize_access_code(data.access_code or "")
+    if data.access_code and len(requested_code) < 4:
+        raise HTTPException(400, "El código de acceso debe tener al menos 4 dígitos.")
+
     access_code = requested_code or _generate_access_code(employee.get("name", "EMP"))
 
     existing = await db.kiosk_access.find_one({"access_code": access_code, "employee_id": {"$ne": employee_id}}, {"_id": 0})
@@ -552,8 +555,8 @@ async def update_employee_kiosk_access(
         raise HTTPException(404, "Primero genera las credenciales de kiosco para este empleado.")
 
     access_code = _normalize_access_code(data.access_code)
-    if len(access_code) < 3:
-        raise HTTPException(400, "El código de acceso debe tener al menos 3 caracteres.")
+    if len(access_code) < 4:
+        raise HTTPException(400, "El código de acceso debe tener al menos 4 dígitos.")
 
     conflict = await db.kiosk_access.find_one({"access_code": access_code, "employee_id": {"$ne": employee_id}}, {"_id": 0})
     if conflict:
