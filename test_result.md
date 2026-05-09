@@ -189,6 +189,21 @@ frontend:
         agent: "main"
         comment: "Vista funcional en /evaluations con plantillas, enlaces públicos y funcionalidades completas"
 
+  - task: "Bug login rápido demo (body stream already read)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/contexts/AuthContext.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "Usuario reporta error al usar botones de acceso rápido (María/Juan): Failed to execute 'json' on 'Response': body stream already read"
+      - working: true
+        agent: "main"
+        comment: "Fix aplicado en AuthContext para parseo seguro del response body sin doble lectura. Además se ejecutó seed.py para crear usuarios demo y credenciales válidas. Validado manualmente: login rápido funciona para María y Juan"
+
 backend:
   - task: "Backend FastAPI (INACTIVO)"
     implemented: true
@@ -202,23 +217,40 @@ backend:
         agent: "main"
         comment: "Backend existe pero no se utiliza. Usuario solo requiere mockups visuales en esta fase"
 
+  - task: "Seed de usuarios demo para autenticación"
+    implemented: true
+    working: true
+    file: "/app/backend/seed.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: "La base estaba vacía (users=0), /api/auth/login devolvía 401 para acceso rápido demo"
+      - working: true
+        agent: "main"
+        comment: "Se ejecutó script de seed para poblar usuarios demo (María/Juan y otros). Login rápido ahora exitoso"
+      - working: true
+        agent: "testing"
+        comment: "✅ BACKEND AUTH TESTS PASSED (4/4). Validado flujo completo de autenticación: 1) POST /api/auth/login para maria@empresa.com y juan@empresa.com - ambos retornan 200 con access_token, token_type y user object completo. 2) GET /api/auth/me con tokens válidos de ambos usuarios - ambos retornan 200 con datos de usuario correctos (id, email, name, role, department, position, is_active, created_at). Seed funcionando correctamente."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 3
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Título 'Empleado A' reemplaza 'Matriz 9-Box'"
-    - "Porcentajes dentro de las celdas de la matriz 9-box"
-    - "Vista Perfil+Resultados fusionada"
-    - "UI para asignación de plantillas KPI"
-    - "Contadores de evaluadores"
+    - "Bug login rápido demo (body stream already read)"
+    - "Seed de usuarios demo para autenticación"
   stuck_tasks: []
-  test_all: true
+  test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
-    message: "Implementadas TODAS las correcciones del feedback del usuario (Mensaje 120). Cambios realizados: 1) Título 'Empleado A' reemplaza 'Matriz 9-Box' (NO reemplaza 'Jugador A' en categorías), 2) Porcentajes dentro de celdas 9-box, 3) Vista perfil+resultados fusionada con comparación de categoría calculada vs autoevaluación, 4) UI completa para asignación y evaluación de KPIs con pestañas, 5) Contadores de evaluadores con lógica Admin/Empleado. Frontend compila exitosamente. Screenshots preliminares muestran todo funcionando correctamente. Requiere testing completo de UI."
+    message: "Se reportó bug en acceso rápido demo (María/Juan) con error body stream already read. Acciones realizadas: 1) fix frontend en AuthContext para parseo seguro del response body y mejor manejo de errores, 2) ejecución de backend/seed.py porque DB estaba vacía (users=0), 3) credenciales de prueba guardadas en /app/memory/test_credentials.md. Validación manual visual exitosa para María y Juan. Solicito retest backend auth login y luego frontend quick-login."
+  - agent: "testing"
+    message: "✅ BACKEND AUTH COMPLETAMENTE FUNCIONAL. Ejecutados 4 tests de autenticación (100% passed): Login exitoso para María (admin) y Juan (empleado) con credenciales correctas, ambos retornan access_token válido y user object completo. GET /api/auth/me funciona correctamente con tokens de ambos usuarios. Estructura de respuesta validada: access_token, token_type=bearer, user con todos los campos requeridos. Seed de usuarios demo working correctamente. Backend listo para uso. PRÓXIMO PASO: Main agent debe resumir y finalizar (backend sin issues críticos)."

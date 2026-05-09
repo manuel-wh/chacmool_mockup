@@ -51,15 +51,25 @@ export const AuthProvider = ({ children }) => {
         body: JSON.stringify({ email, password })
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Login failed');
+      let payload = null;
+      try {
+        const responseText = await response.text();
+        payload = responseText ? JSON.parse(responseText) : null;
+      } catch (parseError) {
+        payload = null;
       }
 
-      const data = await response.json();
-      setToken(data.access_token);
-      setUser(data.user);
-      localStorage.setItem('token', data.access_token);
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.message || 'Credenciales inválidas');
+      }
+
+      if (!payload?.access_token || !payload?.user) {
+        throw new Error('Respuesta de autenticación inválida');
+      }
+
+      setToken(payload.access_token);
+      setUser(payload.user);
+      localStorage.setItem('token', payload.access_token);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
