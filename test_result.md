@@ -208,7 +208,7 @@ frontend:
     implemented: true
     working: true
     file: "/app/frontend/src/pages/HorarioEditor.jsx, /app/frontend/src/pages/AsistenciaConfig.jsx"
-    stuck_count: 1
+    stuck_count: 2
     priority: "high"
     needs_retesting: true
     status_history:
@@ -224,6 +224,12 @@ frontend:
       - working: true
         agent: "main"
         comment: "Ajustado editor según referencia: guardado de crear validado, selectores inicio/fin en la misma fila por rango, y días mixtos solo para jornada partida (1 o 2 rangos por día). Jornada continua mantiene 1 rango por día."
+      - working: false
+        agent: "user"
+        comment: "Usuario reporta detalle pendiente: en jornada partida los tramos deben quedar en una misma línea por día y evitar escenarios de horas excesivas por día."
+      - working: true
+        agent: "main"
+        comment: "Rediseñado jornada partida a editor de línea única por día (dos tramos en el mismo renglón con slider único de 2/4 handles), con controles que fuerzan orden sin solapamiento (tramo 2 inicia después del tramo 1) y validación de tope diario al guardar para impedir configuraciones inválidas."
 
 backend:
   - task: "Backend FastAPI (INACTIVO)"
@@ -290,7 +296,7 @@ backend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 5
+  test_sequence: 6
   run_ui: true
 
 test_plan:
@@ -303,6 +309,8 @@ test_plan:
   - agent: "main"
     message: "Nuevo ajuste solicitado por usuario implementado: corregido guardado en crear jornada y rediseñado editor para jornada partida con días mixtos (1 o 2 rangos por día), selectores de hora inicio/fin en la misma fila y slider de apoyo. Validado manualmente en preview: crear horario cierra modal y crea fila, además lunes con 1 rango y martes con 2 rangos en plantilla partida."
 agent_communication:
+  - agent: "main"
+    message: "Ajuste incremental solicitado por usuario aplicado: jornada partida ahora se edita en una sola línea por día (dos tramos en el mismo renglón), con restricciones de orden/no solapamiento entre tramos y validación para evitar configuraciones inválidas de horas excesivas. Validado visualmente en preview con screenshot actualizado."
   - agent: "main"
     message: "Nueva solicitud del usuario atendida: 1) auto-seed sin borrar data existente cuando users está vacío, 2) Asistencia > Configuración: modal con título correcto Crear/Editar según contexto, 3) scroll interno + modal más alto para contenido extenso, 4) plantillas limitadas a jornada continua/partida y barras/rangos en misma línea, 5) fix adicional detectado en guardado crear vs editar (evitaba crear por usar update con id undefined). Solicito retest backend del auto-seed y endpoints de schedules con nuevas restricciones de template_kind."
   - agent: "main"

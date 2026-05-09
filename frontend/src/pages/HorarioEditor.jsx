@@ -107,6 +107,8 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
     if (!name.trim()) { setError('Indica un nombre para la jornada'); return; }
     if (weeklyDays === 0) { setError('Selecciona al menos un día laboral'); return; }
 
+    let validationError = '';
+
     const normalizedDays = days.map((d) => {
       if (!d.enabled) {
         return { ...d, ranges: [] };
@@ -127,8 +129,30 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
         normalizedRanges = getDefaultRangesForKind(templateKind).slice(0, 1);
       }
 
+      const totalDayMinutes = normalizedRanges.reduce(
+        (acc, r) => acc + (hhmmToMinutes(r.end) - hhmmToMinutes(r.start)),
+        0,
+      );
+
+      if (totalDayMinutes > (24 * 60)) {
+        validationError = `El día ${DAY_LABELS[d.day]} supera 24 horas.`;
+      }
+
+      if (templateKind === 'jornada_partida' && normalizedRanges.length === 2) {
+        const firstEnd = hhmmToMinutes(normalizedRanges[0].end);
+        const secondStart = hhmmToMinutes(normalizedRanges[1].start);
+        if (secondStart <= firstEnd) {
+          validationError = `En ${DAY_LABELS[d.day]} el segundo tramo debe empezar después del primero.`;
+        }
+      }
+
       return { ...d, ranges: normalizedRanges };
     });
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
     onSave({ name: name.trim(), type: 'fijo', days: normalizedDays, template_kind: templateKind });
   };
@@ -299,30 +323,216 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
 
 const DayEditor = ({ label, day, dayIdx, allowMixedRanges, onUpdateRange, onAddRange, onRemoveRange }) => {
   const totalMin = day.ranges.reduce((s, r) => s + Math.max(0, hhmmToMinutes(r.end) - hhmmToMinutes(r.start)), 0);
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4" data-testid={`day-editor-${dayIdx}`}>
       <h3 className="font-semibold text-slate-900 mb-4" style={{ fontFamily: 'Outfit' }}>
         {label} <span className="text-slate-400 font-normal">({minutesToHHMM(totalMin)})</span>
       </h3>
-      <div className="space-y-3">
-        {day.ranges.map((r, ri) => (
-          <RangeRow
-            key={ri}
-            range={r}
-            onChange={(field, value) => onUpdateRange(dayIdx, ri, field, value)}
-            onRemove={allowMixedRanges && day.ranges.length > 1 ? () => onRemoveRange(dayIdx, ri) : null}
-          />
-        ))}
-      </div>
-      {allowMixedRanges && day.ranges.length < 2 && (
-        <button
-          onClick={() => onAddRange(dayIdx)}
-          className="mt-3 inline-flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 font-medium"
-          data-testid={`add-range-${dayIdx}`}
-        >
-          <Plus className="w-3.5 h-3.5" /> Añadir rango
-        </button>
+
+      {allowMixedRanges ? (
+        <PartidaLineEditor
+          day={day}
+          dayIdx={dayIdx}
+          onUpdateRange={onUpdateRange}
+          onAddRange={onAddRange}
+          onRemoveRange={onRemoveRange}
+        />
+      ) : (
+        <div className="space-y-3">
+          {day.ranges.map((r, ri) => (
+            <RangeRow
+              key={ri}
+              range={r}
+              onChange={(field, value) => onUpdateRange(dayIdx, ri, field, value)}
+              onRemove={null}
+            />
+          ))}
+        </div>
       )}
+    </div>
+  );
+};
+
+const PartidaLineEditor = ({ day, dayIdx, onUpdateRange, onAddRange, onRemoveRange }) => {
+  const first = day.ranges?.[0] || { start: '09:00', end: '13:00' };
+  const second = day.ranges?.[1] || null;
+
+  const firstStart = hhmmToMinutes(first.start);
+  const firstEnd = hhmmToMinutes(first.end);
+  const secondStart = second ? hhmmToMinutes(second.start) : null;
+  const secondEnd = second ? hhmmToMinutes(second.end) : null;
+
+  const setRangeValue = (rangeIndex, field, valueInMinutes) => {
+    onUpdateRange(dayIdx, rangeIndex, field, minutesToHHMM(valueInMinutes));
+  };
+
+  const onFirstStart = (mins) => {
+    const max = firstEnd - 15;
+    const safe = Math.max(MIN_OF_DAY, Math.min(mins, max));
+    setRangeValue(0, 'start', safe);
+  };
+
+  const onFirstEnd = (mins) => {
+    const min = firstStart + 15;
+    const max = second ? secondStart - 15 : MAX_OF_DAY - 15;
+    const safe = Math.max(min, Math.min(mins, max));
+    setRangeValue(0, 'end', safe);
+  };
+
+  const onSecondStart = (mins) => {
+    if (!second) return;
+    const min = firstEnd + 15;
+    const max = secondEnd - 15;
+    const safe = Math.max(min, Math.min(mins, max));
+    setRangeValue(1, 'start', safe);
+  };
+
+  const onSecondEnd = (mins) => {
+    if (!second) return;
+    const min = secondStart + 15;
+    const safe = Math.max(min, Math.min(mins, MAX_OF_DAY - 15));
+    setRangeValue(1, 'end', safe);
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3" data-testid="partida-line-editor">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <select
+          value={first.start}
+          onChange={(e) => onFirstStart(hhmmToMinutes(e.target.value))}
+          className="w-[130px] border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-900 bg-white"
+          data-testid="partida-first-start"
+        >
+          {TIME_OPTIONS.map((opt) => (
+            <option key={`partida-fs-${opt}`} value={opt}>{hhmmToAmPm(opt)}</option>
+          ))}
+        </select>
+        <span className="text-slate-400 text-sm">—</span>
+        <select
+          value={first.end}
+          onChange={(e) => onFirstEnd(hhmmToMinutes(e.target.value))}
+          className="w-[130px] border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-900 bg-white"
+          data-testid="partida-first-end"
+        >
+          {TIME_OPTIONS.map((opt) => (
+            <option key={`partida-fe-${opt}`} value={opt}>{hhmmToAmPm(opt)}</option>
+          ))}
+        </select>
+
+        {second ? (
+          <>
+            <span className="text-slate-300 mx-1">|</span>
+            <select
+              value={second.start}
+              onChange={(e) => onSecondStart(hhmmToMinutes(e.target.value))}
+              className="w-[130px] border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-900 bg-white"
+              data-testid="partida-second-start"
+            >
+              {TIME_OPTIONS.map((opt) => (
+                <option key={`partida-ss-${opt}`} value={opt}>{hhmmToAmPm(opt)}</option>
+              ))}
+            </select>
+            <span className="text-slate-400 text-sm">—</span>
+            <select
+              value={second.end}
+              onChange={(e) => onSecondEnd(hhmmToMinutes(e.target.value))}
+              className="w-[130px] border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-900 bg-white"
+              data-testid="partida-second-end"
+            >
+              {TIME_OPTIONS.map((opt) => (
+                <option key={`partida-se-${opt}`} value={opt}>{hhmmToAmPm(opt)}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => onRemoveRange(dayIdx, 1)}
+              className="text-red-400 hover:text-red-600"
+              data-testid="partida-remove-second"
+              title="Quitar segundo rango"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => onAddRange(dayIdx)}
+            className="ml-1 inline-flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+            data-testid={`add-range-${dayIdx}`}
+          >
+            <Plus className="w-3.5 h-3.5" /> Añadir rango
+          </button>
+        )}
+      </div>
+
+      <div className="mt-3 relative h-2">
+        <div className="absolute inset-0 bg-slate-200 rounded-full" />
+
+        <div
+          className="absolute h-2 bg-emerald-500 rounded-full"
+          style={{
+            left: `${(firstStart / MAX_OF_DAY) * 100}%`,
+            width: `${((firstEnd - firstStart) / MAX_OF_DAY) * 100}%`,
+          }}
+        />
+
+        {second && (
+          <div
+            className="absolute h-2 bg-emerald-500 rounded-full"
+            style={{
+              left: `${(secondStart / MAX_OF_DAY) * 100}%`,
+              width: `${((secondEnd - secondStart) / MAX_OF_DAY) * 100}%`,
+            }}
+          />
+        )}
+
+        <input
+          type="range"
+          min={MIN_OF_DAY}
+          max={MAX_OF_DAY - 15}
+          step={15}
+          value={firstStart}
+          onChange={(e) => onFirstStart(Number(e.target.value))}
+          className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-emerald-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:shadow"
+          data-testid="partida-slider-first-start"
+        />
+
+        <input
+          type="range"
+          min={MIN_OF_DAY + 15}
+          max={MAX_OF_DAY - 15}
+          step={15}
+          value={firstEnd}
+          onChange={(e) => onFirstEnd(Number(e.target.value))}
+          className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-emerald-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:shadow"
+          data-testid="partida-slider-first-end"
+        />
+
+        {second && (
+          <>
+            <input
+              type="range"
+              min={MIN_OF_DAY + 15}
+              max={MAX_OF_DAY - 15}
+              step={15}
+              value={secondStart}
+              onChange={(e) => onSecondStart(Number(e.target.value))}
+              className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-emerald-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:shadow"
+              data-testid="partida-slider-second-start"
+            />
+
+            <input
+              type="range"
+              min={MIN_OF_DAY + 15}
+              max={MAX_OF_DAY - 15}
+              step={15}
+              value={secondEnd}
+              onChange={(e) => onSecondEnd(Number(e.target.value))}
+              className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-emerald-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:shadow"
+              data-testid="partida-slider-second-end"
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 };
