@@ -272,6 +272,21 @@ backend:
     stuck_count: 0
     priority: "high"
     needs_retesting: false
+
+  - task: "Registros en línea temporal mensual y semanal"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/EmployeeProfile.jsx"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "Usuario pide que Registros se muestre como línea temporal por mes y por semana en lugar de tarjetas simples."
+      - working: true
+        agent: "main"
+        comment: "Implementada vista temporal: mensual con eje horario y barras por día; semanal con columnas por día y barras de fichaje. Incluye navegación de periodo y selector semanal/mensual."
     status_history:
       - working: false
         agent: "main"

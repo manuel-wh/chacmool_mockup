@@ -176,7 +176,9 @@ const EmployeeProfile = () => {
   const [kioskLoading, setKioskLoading] = useState(false);
   const [kioskBusy, setKioskBusy] = useState(false);
   const [registroPeriod, setRegistroPeriod] = useState('mensual');
+  const [registroAnchor, setRegistroAnchor] = useState(new Date());
   const [registros, setRegistros] = useState([]);
+  const [registroAssignments, setRegistroAssignments] = useState([]);
   const [registrosLoading, setRegistrosLoading] = useState(false);
 
   const [kioskError, setKioskError] = useState('');
@@ -287,17 +289,17 @@ const EmployeeProfile = () => {
   };
 
   const getRegistrosRange = () => {
-    const now = new Date();
+    const base = registroAnchor;
     if (registroPeriod === 'semanal') {
-      const day = (now.getDay() + 6) % 7;
-      const from = new Date(now);
-      from.setDate(now.getDate() - day);
+      const day = (base.getDay() + 6) % 7;
+      const from = new Date(base);
+      from.setDate(base.getDate() - day);
       const to = new Date(from);
       to.setDate(from.getDate() + 6);
       return { from, to };
     }
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const from = new Date(base.getFullYear(), base.getMonth(), 1);
+    const to = new Date(base.getFullYear(), base.getMonth() + 1, 0);
     return { from, to };
   };
 
@@ -313,6 +315,9 @@ const EmployeeProfile = () => {
         dateTo: toISO(to),
       });
       setRegistros(Array.isArray(data) ? data : []);
+
+      const scheduleData = await asistenciaAPI.getEmployeeSchedule(employeeId);
+      setRegistroAssignments(scheduleData?.assignments || []);
     } catch (e) {
       console.error('Error cargando registros:', e);
       setRegistros([]);
@@ -325,7 +330,7 @@ const EmployeeProfile = () => {
     if (activeTab === 'fichajes') {
       loadRegistros();
     }
-  }, [activeTab, registroPeriod, employeeId]);
+  }, [activeTab, registroPeriod, registroAnchor, employeeId]);
 
   // Filtrar empleados para búsqueda
   const filteredEmployees = mockEmployeesData.filter(emp => 
@@ -394,7 +399,7 @@ const EmployeeProfile = () => {
       case 'perfil':
         return renderPerfilContent();
       case 'fichajes':
-        return renderFichajesContent();
+        return renderRegistrosTimelineContent();
       case 'evaluaciones':
         return renderEvaluacionesContent();
       case 'horarios':
@@ -749,6 +754,178 @@ const EmployeeProfile = () => {
   };
 
   // Contenido de Registros
+
+  const renderRegistrosTimelineContent = () => {
+    const { from, to } = getRegistrosRange();
+    const toISO = (d) => d.toISOString().slice(0, 10);
+    const formatDate = (d) => d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const formatHours = (secs) => {
+      const total = Math.max(0, Math.floor((secs || 0) / 60));
+      const h = Math.floor(total / 60);
+      const m = total % 60;
+      return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}min`;
+    };
+
+    const days = [];
+    for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+      days.push(new Date(d));
+    }
+
+    const recordsByDate = registros.reduce((acc, r) => {
+      if (!acc[r.date]) acc[r.date] = [];
+      acc[r.date].push(r);
+      return acc;
+    }, {});
+
+    const plannedSecondsForDay = (day) => {
+      const iso = toISO(day);
+      const weekday = (day.getDay() + 6) % 7;
+      const assignment = (registroAssignments || [])
+        .filter((a) => {
+          if (iso < a.assigned_from) return false;
+          if (!a.no_end && a.assigned_to && iso > a.assigned_to) return false;
+          return true;
+        })
+        .sort((a, b) => String(b.assigned_from).localeCompare(String(a.assigned_from)))[0];
+
+      const dayCfg = assignment?.schedule?.days?.find((x) => x.day === weekday && x.enabled);
+      if (!dayCfg) return 0;
+      return (dayCfg.ranges || []).reduce((sum, r) => {
+        const [sh, sm] = String(r.start || '00:00').split(':').map(Number);
+        const [eh, em] = String(r.end || '00:00').split(':').map(Number);
+        return sum + Math.max(0, ((eh * 60 + em) - (sh * 60 + sm)) * 60);
+      }, 0);
+    };
+
+    const workedSecondsForDay = (iso) => (recordsByDate[iso] || []).reduce((s, r) => s + (r.duration_seconds || r.seconds_elapsed || 0), 0);
+
+    const segmentsForDay = (iso) => (recordsByDate[iso] || []).map((r, idx) => {
+      if (!r.clock_in) return null;
+      const inDate = new Date(r.clock_in);
+      const outDate = r.clock_out ? new Date(r.clock_out) : new Date(r.clock_in);
+      const startH = inDate.getHours() + (inDate.getMinutes() / 60);
+      const endH = outDate.getHours() + (outDate.getMinutes() / 60);
+      const left = Math.max(0, Math.min(100, (startH / 24) * 100));
+      const width = Math.max(0.5, ((Math.max(endH, startH + 0.15) - startH) / 24) * 100);
+      return {
+        id: `${iso}-${idx}`,
+        left,
+        width,
+        color: r.status === 'closed' ? 'bg-blue-500' : 'bg-emerald-500',
+      };
+    }).filter(Boolean);
+
+    const totalWorked = days.reduce((acc, d) => acc + workedSecondsForDay(toISO(d)), 0);
+    const totalPlanned = days.reduce((acc, d) => acc + plannedSecondsForDay(d), 0);
+
+    const navPeriod = (delta) => {
+      if (registroPeriod === 'mensual') {
+        setRegistroAnchor((d) => new Date(d.getFullYear(), d.getMonth() + delta, 1));
+      } else {
+        setRegistroAnchor((d) => {
+          const n = new Date(d);
+          n.setDate(n.getDate() + (delta * 7));
+          return n;
+        });
+      }
+    };
+
+    const rangeLabel = registroPeriod === 'mensual'
+      ? `${from.toLocaleDateString('es-ES', { month: 'long' })} ${from.getFullYear()}`
+      : `${formatDate(from)} - ${formatDate(to)}`;
+
+    return (
+      <div className="space-y-6" data-testid="registros-timeline-tab">
+        <div className="flex items-start justify-between flex-wrap gap-4">
+          <div>
+            <div className="text-sm text-slate-600 mb-1">{registroPeriod === 'mensual' ? 'Este mes' : 'Esta semana'}</div>
+            <div className="text-2xl font-bold text-slate-900">
+              {formatHours(totalWorked)} <span className="text-sm font-normal text-slate-500">/ {formatHours(totalPlanned)} planificadas</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+              <button onClick={() => navPeriod(-1)} className="px-1 text-slate-500 hover:text-slate-900">‹</button>
+              <span className="px-3 min-w-[170px] text-center text-sm font-medium text-slate-900 capitalize">{rangeLabel}</span>
+              <button onClick={() => navPeriod(1)} className="px-1 text-slate-500 hover:text-slate-900">›</button>
+            </div>
+
+            <select
+              value={registroPeriod}
+              onChange={(e) => setRegistroPeriod(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded-2xl text-sm"
+              data-testid="registros-period-select"
+            >
+              <option value="mensual">Mensual</option>
+              <option value="semanal">Semanal</option>
+            </select>
+            <button className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm">Asignar registro</button>
+          </div>
+        </div>
+
+        {registrosLoading ? (
+          <div className="py-10 text-center text-slate-400">Cargando registros…</div>
+        ) : (
+          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+            {registroPeriod === 'mensual' ? (
+              <div className="overflow-x-auto">
+                <div className="min-w-[1200px]">
+                  <div className="grid grid-cols-[220px_200px_1fr] px-6 py-4 border-b border-slate-200 text-sm font-medium text-slate-700">
+                    <div>Fecha</div>
+                    <div>Horas</div>
+                    <div className="grid grid-cols-24 gap-0 text-xs text-slate-400">
+                      {Array.from({ length: 24 }, (_, h) => <div key={h} className="text-center">{h}:00</div>)}
+                    </div>
+                  </div>
+
+                  {days.map((d) => {
+                    const iso = toISO(d);
+                    const worked = workedSecondsForDay(iso);
+                    const planned = plannedSecondsForDay(d);
+                    const segs = segmentsForDay(iso);
+                    return (
+                      <div key={iso} className="grid grid-cols-[220px_200px_1fr] px-6 py-4 border-b border-slate-100 items-center">
+                        <div className="text-slate-800 capitalize">{d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })}</div>
+                        <div className="text-slate-800 font-medium">{formatHours(worked)} / <span className="text-slate-500">{formatHours(planned)}</span></div>
+                        <div className="relative h-5 bg-slate-100 rounded-full">
+                          {segs.map((s) => (
+                            <div key={s.id} className={`absolute top-0 h-5 rounded-full ${s.color}`} style={{ left: `${s.left}%`, width: `${s.width}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="p-6">
+                <div className="grid grid-cols-7 gap-4 text-center text-sm text-slate-600 mb-3">
+                  {days.map((d) => (
+                    <div key={`lbl-${toISO(d)}`} className="font-medium capitalize">{d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-4">
+                  {days.map((d) => {
+                    const iso = toISO(d);
+                    const segs = segmentsForDay(iso).map((s) => ({ ...s, top: s.left, height: s.width }));
+                    return (
+                      <div key={iso} className="border border-slate-200 rounded-xl h-[320px] relative bg-slate-50 overflow-hidden">
+                        {segs.map((s) => (
+                          <div key={s.id} className={`absolute left-2 right-2 rounded-md ${s.color}`} style={{ top: `${s.top}%`, height: `${Math.max(2, s.height)}%` }} />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderFichajesContent = () => {
     const { from, to } = getRegistrosRange();
     const formatDate = (d) => d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
