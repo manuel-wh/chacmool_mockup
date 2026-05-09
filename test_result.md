@@ -208,7 +208,7 @@ frontend:
     implemented: true
     working: true
     file: "/app/frontend/src/pages/HorarioEditor.jsx, /app/frontend/src/pages/AsistenciaConfig.jsx"
-    stuck_count: 0
+    stuck_count: 1
     priority: "high"
     needs_retesting: true
     status_history:
@@ -218,6 +218,12 @@ frontend:
       - working: true
         agent: "main"
         comment: "Implementado: título dinámico Crear/Editar por modo real, scroll interno + modal más alto, solo plantillas jornada continua/partida, selector inicial jornada partida correcto, rangos en layout de misma línea, y fix adicional en guardado (crear vs editar)"
+      - working: false
+        agent: "user"
+        comment: "Usuario reporta que 'Crear horario' no guardaba y solicita referencia con selectores en la misma fila + días mixtos para jornada partida"
+      - working: true
+        agent: "main"
+        comment: "Ajustado editor según referencia: guardado de crear validado, selectores inicio/fin en la misma fila por rango, y días mixtos solo para jornada partida (1 o 2 rangos por día). Jornada continua mantiene 1 rango por día."
 
 backend:
   - task: "Backend FastAPI (INACTIVO)"
@@ -288,11 +294,14 @@ metadata:
   run_ui: true
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Asistencia configuración: modal crear/editar, scroll y plantillas"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
+  - agent: "main"
+    message: "Nuevo ajuste solicitado por usuario implementado: corregido guardado en crear jornada y rediseñado editor para jornada partida con días mixtos (1 o 2 rangos por día), selectores de hora inicio/fin en la misma fila y slider de apoyo. Validado manualmente en preview: crear horario cierra modal y crea fila, además lunes con 1 rango y martes con 2 rangos en plantilla partida."
 agent_communication:
   - agent: "main"
     message: "Nueva solicitud del usuario atendida: 1) auto-seed sin borrar data existente cuando users está vacío, 2) Asistencia > Configuración: modal con título correcto Crear/Editar según contexto, 3) scroll interno + modal más alto para contenido extenso, 4) plantillas limitadas a jornada continua/partida y barras/rangos en misma línea, 5) fix adicional detectado en guardado crear vs editar (evitaba crear por usar update con id undefined). Solicito retest backend del auto-seed y endpoints de schedules con nuevas restricciones de template_kind."

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { X, Plus, Trash2, Clock } from 'lucide-react';
+import { X, Plus, Trash2 } from 'lucide-react';
 import {
   DAY_LABELS, DAY_SHORT, hhmmToMinutes, minutesToHHMM, computeWeeklyHours,
   TEMPLATE_JORNADA_CONTINUA, TEMPLATE_JORNADA_PARTIDA,
@@ -22,6 +22,26 @@ const getTemplateDays = (kind) => (
   kind === 'jornada_partida' ? TEMPLATE_JORNADA_PARTIDA() : TEMPLATE_JORNADA_CONTINUA()
 );
 
+const getDefaultRangesForKind = (kind) => (
+  kind === 'jornada_partida'
+    ? [{ start: '09:00', end: '13:00' }, { start: '14:00', end: '18:00' }]
+    : [{ start: '09:00', end: '18:00' }]
+);
+
+const TIME_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
+  const mins = idx * 15;
+  return minutesToHHMM(mins);
+});
+
+const hhmmToAmPm = (hhmm) => {
+  const mins = hhmmToMinutes(hhmm);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+};
+
 const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
   const [name, setName] = useState(initial?.name || '');
   const [templateKind, setTemplateKind] = useState(initial?.template_kind === 'jornada_partida' ? 'jornada_partida' : 'jornada_continua');
@@ -39,12 +59,14 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
 
   const weeklyHours = useMemo(() => computeWeeklyHours(days), [days]);
   const weeklyDays = days.filter((d) => d.enabled).length;
+  const allowMixedRanges = templateKind === 'jornada_partida';
 
   const toggleDay = (i) => {
-    setDays((prev) => prev.map((d, idx) => idx === i
-      ? { ...d, enabled: !d.enabled, ranges: !d.enabled && d.ranges.length === 0 ? [{ start: '09:00', end: '18:00' }] : d.ranges }
-      : d
-    ));
+    setDays((prev) => prev.map((d, idx) => {
+      if (idx !== i) return d;
+      if (d.enabled) return { ...d, enabled: false, ranges: [] };
+      return { ...d, enabled: true, ranges: d.ranges.length > 0 ? d.ranges : getDefaultRangesForKind(templateKind) };
+    }));
   };
 
   const updateRange = (dayIdx, rangeIdx, field, value) => {
@@ -58,10 +80,15 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
   };
 
   const addRange = (dayIdx) => {
-    setDays((prev) => prev.map((d, di) => di === dayIdx
-      ? { ...d, ranges: [...d.ranges, { start: '14:00', end: '17:00' }] }
-      : d
-    ));
+    if (templateKind !== 'jornada_partida') return;
+    setDays((prev) => prev.map((d, di) => {
+      if (di !== dayIdx) return d;
+      if ((d.ranges || []).length >= 2) return d;
+      const firstEnd = d.ranges?.[0]?.end || '13:00';
+      const suggestedStart = minutesToHHMM(Math.min(hhmmToMinutes(firstEnd) + 60, MAX_OF_DAY - 30));
+      const suggestedEnd = minutesToHHMM(Math.min(hhmmToMinutes(suggestedStart) + 240, MAX_OF_DAY - 15));
+      return { ...d, ranges: [...d.ranges, { start: suggestedStart, end: suggestedEnd }] };
+    }));
   };
 
   const removeRange = (dayIdx, rangeIdx) => {
@@ -73,14 +100,37 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
 
   const applyTemplate = (kind) => {
     setTemplateKind(kind);
-    if (kind === 'jornada_continua') setDays(TEMPLATE_JORNADA_CONTINUA());
-    if (kind === 'jornada_partida') setDays(TEMPLATE_JORNADA_PARTIDA());
+    setDays(getTemplateDays(kind));
   };
 
   const handleSubmit = () => {
     if (!name.trim()) { setError('Indica un nombre para la jornada'); return; }
     if (weeklyDays === 0) { setError('Selecciona al menos un día laboral'); return; }
-    onSave({ name: name.trim(), type: 'fijo', days, template_kind: templateKind });
+
+    const normalizedDays = days.map((d) => {
+      if (!d.enabled) {
+        return { ...d, ranges: [] };
+      }
+
+      let normalizedRanges = (d.ranges || [])
+        .map((r) => ({ start: r.start, end: r.end }))
+        .filter((r) => hhmmToMinutes(r.end) > hhmmToMinutes(r.start))
+        .sort((a, b) => hhmmToMinutes(a.start) - hhmmToMinutes(b.start));
+
+      if (templateKind === 'jornada_continua') {
+        normalizedRanges = normalizedRanges.slice(0, 1);
+      } else {
+        normalizedRanges = normalizedRanges.slice(0, 2);
+      }
+
+      if (normalizedRanges.length === 0) {
+        normalizedRanges = getDefaultRangesForKind(templateKind).slice(0, 1);
+      }
+
+      return { ...d, ranges: normalizedRanges };
+    });
+
+    onSave({ name: name.trim(), type: 'fijo', days: normalizedDays, template_kind: templateKind });
   };
 
   // Cálculo de medio día (40% del día más alto)
@@ -200,8 +250,13 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
               </select>
             </div>
             <p className="text-xs text-slate-500 mb-5 leading-relaxed">
-              La jornada continua creará una sola franja de tiempo mientras que la jornada partida creará dos franjas con un periodo no remunerado en medio.
+              La jornada continua usa una sola franja por día. La jornada partida permite hasta dos franjas por día para planificar comida y días mixtos.
             </p>
+            {allowMixedRanges && (
+              <p className="text-[11px] text-emerald-700 mb-5">
+                En jornada partida puedes dejar días con un solo rango (sin comida) o dos rangos (con comida).
+              </p>
+            )}
 
             <div className="space-y-5">
               {days.map((day, i) => day.enabled && (
@@ -210,6 +265,7 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
                   label={DAY_LABELS[i]}
                   day={day}
                   dayIdx={i}
+                  allowMixedRanges={allowMixedRanges}
                   onUpdateRange={updateRange}
                   onAddRange={addRange}
                   onRemoveRange={removeRange}
@@ -241,37 +297,39 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
   );
 };
 
-const DayEditor = ({ label, day, dayIdx, onUpdateRange, onAddRange, onRemoveRange }) => {
+const DayEditor = ({ label, day, dayIdx, allowMixedRanges, onUpdateRange, onAddRange, onRemoveRange }) => {
   const totalMin = day.ranges.reduce((s, r) => s + Math.max(0, hhmmToMinutes(r.end) - hhmmToMinutes(r.start)), 0);
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4" data-testid={`day-editor-${dayIdx}`}>
       <h3 className="font-semibold text-slate-900 mb-4" style={{ fontFamily: 'Outfit' }}>
         {label} <span className="text-slate-400 font-normal">({minutesToHHMM(totalMin)})</span>
       </h3>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <div className="space-y-3">
         {day.ranges.map((r, ri) => (
           <RangeRow
             key={ri}
             range={r}
             onChange={(field, value) => onUpdateRange(dayIdx, ri, field, value)}
-            onRemove={day.ranges.length > 1 ? () => onRemoveRange(dayIdx, ri) : null}
+            onRemove={allowMixedRanges && day.ranges.length > 1 ? () => onRemoveRange(dayIdx, ri) : null}
           />
         ))}
       </div>
-      <button
-        onClick={() => onAddRange(dayIdx)}
-        className="mt-3 inline-flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 font-medium"
-        data-testid={`add-range-${dayIdx}`}
-      >
-        <Plus className="w-3.5 h-3.5" /> Añadir rango
-      </button>
+      {allowMixedRanges && day.ranges.length < 2 && (
+        <button
+          onClick={() => onAddRange(dayIdx)}
+          className="mt-3 inline-flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+          data-testid={`add-range-${dayIdx}`}
+        >
+          <Plus className="w-3.5 h-3.5" /> Añadir rango
+        </button>
+      )}
     </div>
   );
 };
 
 /**
- * RangeRow: un rango horario con doble slider visual + inputs HH:MM.
- * Implementación: dos inputs type=range superpuestos + chips con horas.
+ * RangeRow: un rango horario con dos selectores (inicio/fin) en la misma fila
+ * y slider visual para ajustes rápidos.
  */
 const RangeRow = ({ range, onChange, onRemove }) => {
   const startMin = hhmmToMinutes(range.start);
@@ -281,31 +339,59 @@ const RangeRow = ({ range, onChange, onRemove }) => {
     const v = Math.min(Number(val), endMin - 15);
     onChange('start', minutesToHHMM(v));
   };
+
   const handleEnd = (val) => {
     const v = Math.max(Number(val), startMin + 15);
     onChange('end', minutesToHHMM(v));
   };
 
-  // Para mostrar AM/PM
-  const fmt = (mins) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+  const handleStartSelect = (value) => {
+    const selected = hhmmToMinutes(value);
+    const nextStart = Math.min(selected, endMin - 15);
+    onChange('start', minutesToHHMM(nextStart));
+  };
+
+  const handleEndSelect = (value) => {
+    const selected = hhmmToMinutes(value);
+    const nextEnd = Math.max(selected, startMin + 15);
+    onChange('end', minutesToHHMM(nextEnd));
   };
 
   return (
-    <div className="flex items-center gap-3" data-testid="range-row">
-      {/* Chip start */}
-      <div className="flex flex-col items-center gap-1 flex-shrink-0">
-        <div className="bg-white border border-slate-200 rounded-full px-3 py-1.5 text-xs font-medium text-slate-900 inline-flex items-center gap-1.5">
-          {fmt(startMin)} <Clock className="w-3 h-3 text-slate-400" />
-        </div>
+    <div className="rounded-xl border border-slate-200 bg-white p-3" data-testid="range-row">
+      <div className="flex items-center gap-2">
+        <select
+          value={range.start}
+          onChange={(e) => handleStartSelect(e.target.value)}
+          className="flex-1 min-w-[140px] border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-900 bg-white"
+          data-testid="range-start-select"
+        >
+          {TIME_OPTIONS.map((opt) => (
+            <option key={`start-${opt}`} value={opt}>{hhmmToAmPm(opt)}</option>
+          ))}
+        </select>
+
+        <span className="text-slate-400 text-sm">—</span>
+
+        <select
+          value={range.end}
+          onChange={(e) => handleEndSelect(e.target.value)}
+          className="flex-1 min-w-[140px] border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-900 bg-white"
+          data-testid="range-end-select"
+        >
+          {TIME_OPTIONS.map((opt) => (
+            <option key={`end-${opt}`} value={opt}>{hhmmToAmPm(opt)}</option>
+          ))}
+        </select>
+
+        {onRemove && (
+          <button onClick={onRemove} className="text-red-400 hover:text-red-600 flex-shrink-0" data-testid="remove-range">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
-      {/* Doble slider */}
-      <div className="flex-1 relative h-2">
+      <div className="mt-3 relative h-2">
         <div className="absolute inset-0 bg-slate-200 rounded-full" />
         <div
           className="absolute h-2 bg-emerald-500 rounded-full"
@@ -335,19 +421,6 @@ const RangeRow = ({ range, onChange, onRemove }) => {
           data-testid="range-end"
         />
       </div>
-
-      {/* Chip end */}
-      <div className="flex flex-col items-center gap-1 flex-shrink-0">
-        <div className="bg-white border border-slate-200 rounded-full px-3 py-1.5 text-xs font-medium text-slate-900 inline-flex items-center gap-1.5">
-          {fmt(endMin)} <Clock className="w-3 h-3 text-slate-400" />
-        </div>
-      </div>
-
-      {onRemove && (
-        <button onClick={onRemove} className="text-red-400 hover:text-red-600 flex-shrink-0" data-testid="remove-range">
-          <Trash2 className="w-4 h-4" />
-        </button>
-      )}
     </div>
   );
 };
