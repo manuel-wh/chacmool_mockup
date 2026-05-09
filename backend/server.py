@@ -29,6 +29,8 @@ from routes.kpis import router as kpis_router
 from routes.empleado_a import router as empleado_a_router
 from routes.pdi import router as pdi_router
 from routes.asistencia import router as asistencia_router
+from middlewares.auth import db
+from utils.bootstrap import ensure_demo_seed_data
 
 # Include routers
 app.include_router(auth_router)
@@ -39,6 +41,15 @@ app.include_router(kpis_router)
 app.include_router(empleado_a_router)
 app.include_router(pdi_router)
 app.include_router(asistencia_router)
+
+@app.on_event("startup")
+async def bootstrap_demo_data_if_needed():
+    try:
+        result = await ensure_demo_seed_data(db)
+        if result.get("seeded"):
+            print(f"[bootstrap] Demo data creado: users={result.get('users_inserted', 0)}, employees={result.get('employees_inserted', 0)}")
+    except Exception as exc:
+        print(f"[bootstrap] No se pudo inicializar demo data: {exc}")
 
 @app.get("/api/health")
 async def health_check():

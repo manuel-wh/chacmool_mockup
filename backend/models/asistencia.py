@@ -27,7 +27,7 @@ class Schedule(BaseModel):
     weekly_hours: float = 0
     weekly_days: int = 0
     breaks_count: int = 0
-    template_kind: Literal["jornada_continua", "jornada_partida", "personalizado"] = "jornada_continua"
+    template_kind: Literal["jornada_continua", "jornada_partida"] = "jornada_continua"
     created_at: str
     created_by: Optional[str] = None
 
@@ -36,14 +36,14 @@ class ScheduleCreate(BaseModel):
     name: str
     type: Literal["fijo", "flexible"] = "fijo"
     days: List[DaySchedule] = []
-    template_kind: Literal["jornada_continua", "jornada_partida", "personalizado"] = "jornada_continua"
+    template_kind: Literal["jornada_continua", "jornada_partida"] = "jornada_continua"
 
 
 class ScheduleUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[Literal["fijo", "flexible"]] = None
     days: Optional[List[DaySchedule]] = None
-    template_kind: Optional[Literal["jornada_continua", "jornada_partida", "personalizado"]] = None
+    template_kind: Optional[Literal["jornada_continua", "jornada_partida"]] = None
 
 
 # ============== ASIGNACIÓN HORARIO A EMPLEADO ==============

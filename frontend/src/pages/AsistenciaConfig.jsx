@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Search, MoreVertical, Trash2, Edit2, ChevronDown,
-  Calendar, Smartphone, Monitor, MapPin, QrCode, Camera, Hash, ScanFace, Fingerprint,
+  Calendar, Smartphone, MapPin, QrCode, Camera, Hash, ScanFace, Fingerprint,
 } from 'lucide-react';
 import { asistenciaAPI } from '../services/api';
 import { DAY_SHORT, MONTH_LABELS, minutesToHHMM, computeWeeklyHours } from '../utils/asistencia';
@@ -99,7 +99,7 @@ const HorariosTab = () => {
 
   const handleSave = async (data) => {
     try {
-      if (editing) await asistenciaAPI.updateSchedule(editing.id, data);
+      if (editing?.id) await asistenciaAPI.updateSchedule(editing.id, data);
       else await asistenciaAPI.createSchedule(data);
       setShowEditor(false);
       setEditing(null);
@@ -181,9 +181,9 @@ const HorariosTab = () => {
       {showCreate && (
         <CreateScheduleTypeModal
           onClose={() => setShowCreate(false)}
-          onPick={(type) => {
+          onPick={({ type, template_kind }) => {
             setShowCreate(false);
-            setEditing({ name: '', type, days: null, template_kind: 'jornada_continua' });
+            setEditing({ name: '', type, days: null, template_kind });
             setShowEditor(true);
           }}
         />
@@ -192,7 +192,7 @@ const HorariosTab = () => {
       {/* Editor */}
       {showEditor && (
         <HorarioEditor
-          initial={editing && editing.id ? editing : (editing && !editing.id ? { name: editing.name, type: editing.type, days: null } : null)}
+          initial={editing && editing.id ? editing : (editing && !editing.id ? { name: editing.name, type: editing.type, days: null, template_kind: editing.template_kind } : null)}
           onCancel={() => { setShowEditor(false); setEditing(null); }}
           onSave={handleSave}
         />
@@ -291,22 +291,22 @@ const CreateScheduleTypeModal = ({ onClose, onPick }) => (
       </div>
       <div className="divide-y divide-slate-100">
         <button
-          onClick={() => onPick('fijo')}
+          onClick={() => onPick({ type: 'fijo', template_kind: 'jornada_continua' })}
           className="w-full text-left p-6 hover:bg-slate-50 transition"
-          data-testid="pick-fijo"
+          data-testid="pick-jornada-continua"
         >
-          <h4 className="text-lg font-semibold text-slate-900 mb-1" style={{ fontFamily: 'Outfit' }}>Horario fijo</h4>
-          <p className="text-sm text-slate-600 mb-1">La hora de entrada y salida es fija y común para todos los empleados que tengan este horario.</p>
-          <p className="text-xs text-slate-400">Ejemplo: de 09:00 a 17:00</p>
+          <h4 className="text-lg font-semibold text-slate-900 mb-1" style={{ fontFamily: 'Outfit' }}>Jornada continua</h4>
+          <p className="text-sm text-slate-600 mb-1">Una sola franja de trabajo continua para cada día laboral activo.</p>
+          <p className="text-xs text-slate-400">Ejemplo: de 09:00 a 18:00</p>
         </button>
         <button
-          onClick={() => onPick('flexible')}
+          onClick={() => onPick({ type: 'fijo', template_kind: 'jornada_partida' })}
           className="w-full text-left p-6 hover:bg-slate-50 transition"
-          data-testid="pick-flexible"
+          data-testid="pick-jornada-partida"
         >
-          <h4 className="text-lg font-semibold text-slate-900 mb-1" style={{ fontFamily: 'Outfit' }}>Horario flexible</h4>
-          <p className="text-sm text-slate-600 mb-1">Se establece una cantidad de horas a realizar en un periodo de tiempo concreto.</p>
-          <p className="text-xs text-slate-400">Ejemplo: 40:00 horas semanales</p>
+          <h4 className="text-lg font-semibold text-slate-900 mb-1" style={{ fontFamily: 'Outfit' }}>Jornada partida</h4>
+          <p className="text-sm text-slate-600 mb-1">Dos franjas de trabajo separadas por una pausa en medio.</p>
+          <p className="text-xs text-slate-400">Ejemplo: 09:00-13:00 y 14:00-18:00</p>
         </button>
       </div>
     </div>

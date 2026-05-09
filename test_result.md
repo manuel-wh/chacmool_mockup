@@ -204,6 +204,21 @@ frontend:
         agent: "main"
         comment: "Fix aplicado en AuthContext para parseo seguro del response body sin doble lectura. Además se ejecutó seed.py para crear usuarios demo y credenciales válidas. Validado manualmente: login rápido funciona para María y Juan"
 
+  - task: "Asistencia configuración: modal crear/editar, scroll y plantillas"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/HorarioEditor.jsx, /app/frontend/src/pages/AsistenciaConfig.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "Usuario reporta: título incorrecto en modal agregar jornada, contenido sin scroll, plantillas deben ser solo continua/partida y barras en misma línea"
+      - working: true
+        agent: "main"
+        comment: "Implementado: título dinámico Crear/Editar por modo real, scroll interno + modal más alto, solo plantillas jornada continua/partida, selector inicial jornada partida correcto, rangos en layout de misma línea, y fix adicional en guardado (crear vs editar)"
+
 backend:
   - task: "Backend FastAPI (INACTIVO)"
     implemented: true
@@ -235,22 +250,55 @@ backend:
         agent: "testing"
         comment: "✅ BACKEND AUTH TESTS PASSED (4/4). Validado flujo completo de autenticación: 1) POST /api/auth/login para maria@empresa.com y juan@empresa.com - ambos retornan 200 con access_token, token_type y user object completo. 2) GET /api/auth/me con tokens válidos de ambos usuarios - ambos retornan 200 con datos de usuario correctos (id, email, name, role, department, position, is_active, created_at). Seed funcionando correctamente."
 
+
+  - task: "Auto-seed al arranque cuando users está vacío"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py, /app/backend/utils/bootstrap.py, /app/backend/models/asistencia.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Implementado bootstrap idempotente: si users=0, crea usuarios demo (admin/maria/juan) y empleados solo si faltan, sin borrar data existente. Validado eliminando users y reiniciando backend (se regeneraron automáticamente)."
+      - working: true
+        agent: "testing"
+        comment: "✅ AUTO-SEED VALIDADO. Test realizado: 1) Eliminé todos los usuarios de la colección users (quedó en 0), 2) Reinicié backend, 3) Verificado en logs: '[bootstrap] Demo data creado: users=3, employees=0', 4) Confirmado en DB: 3 usuarios recreados (admin, maria, juan), 8 empleados preservados sin cambios. El auto-seed funciona correctamente: crea usuarios cuando users=0 y NO borra empleados existentes."
+
+  - task: "Validación de template_kind en schedules"
+    implemented: true
+    working: true
+    file: "/app/backend/models/asistencia.py, /app/backend/routes/asistencia.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "BUG DETECTADO: ScheduleUpdate permitía template_kind='personalizado' en el modelo Pydantic (línea 46), causando error 500 al intentar actualizar porque Schedule solo acepta 'jornada_continua' o 'jornada_partida'. El update se guardaba en DB pero fallaba al serializar la respuesta."
+      - working: true
+        agent: "testing"
+        comment: "✅ BUG CORREGIDO Y VALIDADO. Fix aplicado: Actualizado ScheduleUpdate en /app/backend/models/asistencia.py línea 46 para remover 'personalizado' de los valores permitidos. Tests completos ejecutados (13/13 passed): 1) POST /api/asistencia/schedules con jornada_continua ✅, 2) POST con jornada_partida ✅, 3) POST con personalizado correctamente rechazado con 422 ✅, 4) PUT con personalizado correctamente rechazado con 422 ✅, 5) GET list/get schedules ✅, 6) PUT update válido ✅, 7) DELETE schedules ✅. Todas las operaciones CRUD funcionan correctamente con las restricciones de template_kind."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 5
   run_ui: true
 
 test_plan:
-  current_focus:
-    - "Bug login rápido demo (body stream already read)"
-    - "Seed de usuarios demo para autenticación"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
+    message: "Nueva solicitud del usuario atendida: 1) auto-seed sin borrar data existente cuando users está vacío, 2) Asistencia > Configuración: modal con título correcto Crear/Editar según contexto, 3) scroll interno + modal más alto para contenido extenso, 4) plantillas limitadas a jornada continua/partida y barras/rangos en misma línea, 5) fix adicional detectado en guardado crear vs editar (evitaba crear por usar update con id undefined). Solicito retest backend del auto-seed y endpoints de schedules con nuevas restricciones de template_kind."
+  - agent: "main"
     message: "Se reportó bug en acceso rápido demo (María/Juan) con error body stream already read. Acciones realizadas: 1) fix frontend en AuthContext para parseo seguro del response body y mejor manejo de errores, 2) ejecución de backend/seed.py porque DB estaba vacía (users=0), 3) credenciales de prueba guardadas en /app/memory/test_credentials.md. Validación manual visual exitosa para María y Juan. Solicito retest backend auth login y luego frontend quick-login."
   - agent: "testing"
     message: "✅ BACKEND AUTH COMPLETAMENTE FUNCIONAL. Ejecutados 4 tests de autenticación (100% passed): Login exitoso para María (admin) y Juan (empleado) con credenciales correctas, ambos retornan access_token válido y user object completo. GET /api/auth/me funciona correctamente con tokens de ambos usuarios. Estructura de respuesta validada: access_token, token_type=bearer, user con todos los campos requeridos. Seed de usuarios demo working correctamente. Backend listo para uso. PRÓXIMO PASO: Main agent debe resumir y finalizar (backend sin issues críticos)."
+  - agent: "testing"
+    message: "✅ BACKEND TESTING COMPLETO - TODOS LOS TESTS PASADOS (13/13). Validaciones realizadas: 1) AUTO-SEED: Funciona correctamente al arranque cuando users=0, crea 3 usuarios (admin/maria/juan) sin borrar empleados existentes (8 preservados). 2) AUTH: Login y /me funcionan para maria@empresa.com y juan@empresa.com con credenciales de test_credentials.md. 3) SCHEDULES: CRUD completo validado - create con jornada_continua ✅, create con jornada_partida ✅, create/update con personalizado correctamente rechazados con 422 ✅, list/get/update/delete funcionan correctamente ✅. BUG CORREGIDO: ScheduleUpdate permitía 'personalizado' causando error 500, ahora solo acepta jornada_continua/partida. Backend 100% funcional sin issues críticos. PRÓXIMO PASO: Main agent debe resumir y finalizar."

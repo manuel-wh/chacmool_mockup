@@ -18,19 +18,22 @@ import {
 const MIN_OF_DAY = 0;
 const MAX_OF_DAY = 24 * 60;
 
+const getTemplateDays = (kind) => (
+  kind === 'jornada_partida' ? TEMPLATE_JORNADA_PARTIDA() : TEMPLATE_JORNADA_CONTINUA()
+);
+
 const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
   const [name, setName] = useState(initial?.name || '');
-  const [type, setType] = useState(initial?.type || 'fijo');
-  const [templateKind, setTemplateKind] = useState(initial?.template_kind || 'jornada_continua');
-  const [days, setDays] = useState(initial?.days || TEMPLATE_JORNADA_CONTINUA());
+  const [templateKind, setTemplateKind] = useState(initial?.template_kind === 'jornada_partida' ? 'jornada_partida' : 'jornada_continua');
+  const [days, setDays] = useState(initial?.days || getTemplateDays(initial?.template_kind));
   const [error, setError] = useState('');
+  const isEditMode = Boolean(initial?.id);
 
   useEffect(() => {
     if (initial) {
       setName(initial.name || '');
-      setType(initial.type || 'fijo');
-      setTemplateKind(initial.template_kind || 'jornada_continua');
-      setDays(initial.days || TEMPLATE_JORNADA_CONTINUA());
+      setTemplateKind(initial.template_kind === 'jornada_partida' ? 'jornada_partida' : 'jornada_continua');
+      setDays(initial.days || getTemplateDays(initial.template_kind));
     }
   }, [initial]);
 
@@ -77,7 +80,7 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
   const handleSubmit = () => {
     if (!name.trim()) { setError('Indica un nombre para la jornada'); return; }
     if (weeklyDays === 0) { setError('Selecciona al menos un día laboral'); return; }
-    onSave({ name: name.trim(), type, days, template_kind: templateKind });
+    onSave({ name: name.trim(), type: 'fijo', days, template_kind: templateKind });
   };
 
   // Cálculo de medio día (40% del día más alto)
@@ -89,11 +92,11 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto" data-testid="horario-editor">
-      <div className="bg-white rounded-2xl w-full max-w-6xl my-6">
+      <div className="bg-white rounded-2xl w-full max-w-6xl my-4 max-h-[92vh] flex flex-col">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 rounded-t-2xl px-6 py-4 flex items-center justify-between z-10">
           <h2 className="text-xl font-semibold text-slate-900" style={{ fontFamily: 'Outfit' }}>
-            {initial ? 'Editar horario' : 'Crear horario'}
+            {isEditMode ? 'Editar horario' : 'Crear horario'}
           </h2>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
             <X className="w-5 h-5" />
@@ -106,7 +109,7 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
           </div>
         )}
 
-        <div className="grid lg:grid-cols-2 gap-0 max-h-[calc(100vh-200px)] overflow-hidden">
+        <div className="grid lg:grid-cols-2 gap-0 flex-1 min-h-0 overflow-hidden">
           {/* Panel izquierdo: meta */}
           <div className="p-6 space-y-5 overflow-y-auto border-r border-slate-200">
             <div>
@@ -175,17 +178,9 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
             {/* Tipo */}
             <div className="border-t border-slate-100 pt-4">
               <p className="text-sm font-medium text-slate-700 mb-2">Tipo de horario</p>
-              <div className="flex gap-2">
-                <label className={`flex-1 border rounded-xl p-3 cursor-pointer text-sm ${type === 'fijo' ? 'border-slate-900 bg-slate-50' : 'border-slate-200'}`}>
-                  <input type="radio" className="hidden" checked={type === 'fijo'} onChange={() => setType('fijo')} />
-                  <div className="font-semibold text-slate-900">Horario fijo</div>
-                  <div className="text-xs text-slate-500">Entrada y salida fijas</div>
-                </label>
-                <label className={`flex-1 border rounded-xl p-3 cursor-pointer text-sm ${type === 'flexible' ? 'border-slate-900 bg-slate-50' : 'border-slate-200'}`}>
-                  <input type="radio" className="hidden" checked={type === 'flexible'} onChange={() => setType('flexible')} />
-                  <div className="font-semibold text-slate-900">Horario flexible</div>
-                  <div className="text-xs text-slate-500">Cantidad de horas libre</div>
-                </label>
+              <div className="border border-slate-200 rounded-xl p-3 text-sm bg-slate-50">
+                <div className="font-semibold text-slate-900">Horario fijo</div>
+                <div className="text-xs text-slate-500">Definido por plantilla de jornada continua o partida</div>
               </div>
             </div>
           </div>
@@ -202,7 +197,6 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
               >
                 <option value="jornada_continua">Jornada continua</option>
                 <option value="jornada_partida">Jornada partida</option>
-                <option value="personalizado">Personalizado</option>
               </select>
             </div>
             <p className="text-xs text-slate-500 mb-5 leading-relaxed">
@@ -239,7 +233,7 @@ const HorarioEditor = ({ initial = null, onSave, onCancel }) => {
             onClick={handleSubmit}
             className="px-5 py-2.5 text-sm font-medium bg-slate-900 text-white rounded-xl hover:bg-slate-800"
           >
-            {initial ? 'Editar horario' : 'Crear horario'}
+            {isEditMode ? 'Editar horario' : 'Crear horario'}
           </button>
         </div>
       </div>
@@ -254,7 +248,7 @@ const DayEditor = ({ label, day, dayIdx, onUpdateRange, onAddRange, onRemoveRang
       <h3 className="font-semibold text-slate-900 mb-4" style={{ fontFamily: 'Outfit' }}>
         {label} <span className="text-slate-400 font-normal">({minutesToHHMM(totalMin)})</span>
       </h3>
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         {day.ranges.map((r, ri) => (
           <RangeRow
             key={ri}
