@@ -528,6 +528,20 @@ const _req = async (path, opts = {}) => {
   return res.json();
 };
 
+const _publicReq = async (path, opts = {}) => {
+  const headers = opts?.headers || { 'Content-Type': 'application/json' };
+  const res = await fetch(`${API_URL}${path}`, {
+    ...opts,
+    headers,
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j.detail || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  return res.json();
+};
+
 export const asistenciaAPI = {
   // Schedules
   listSchedules: () => _req('/api/asistencia/schedules'),
@@ -573,5 +587,27 @@ export const asistenciaAPI = {
   getDevices: () => _req('/api/asistencia/devices'),
   updateDevices: (data) => _req('/api/asistencia/devices', {
     method: 'PUT', body: JSON.stringify(data),
+  }),
+
+  // Kiosco credenciales (admin)
+  getEmployeeKioskAccess: (employeeId) => _req(`/api/asistencia/employees/${employeeId}/kiosk-access`),
+  generateEmployeeKioskAccess: (employeeId, accessCode = null) => _req(
+    `/api/asistencia/employees/${employeeId}/kiosk-access/generate`,
+    { method: 'POST', body: JSON.stringify({ access_code: accessCode }) }
+  ),
+  updateEmployeeKioskAccess: (employeeId, accessCode) => _req(
+    `/api/asistencia/employees/${employeeId}/kiosk-access`,
+    { method: 'PUT', body: JSON.stringify({ access_code: accessCode }) }
+  ),
+  regenerateEmployeeKioskPin: (employeeId) => _req(
+    `/api/asistencia/employees/${employeeId}/kiosk-access/regenerate-pin`,
+    { method: 'POST' }
+  ),
+
+  // Kiosco público (sin login)
+  kioskPublicConfig: () => _publicReq('/api/asistencia/kiosco/public-config', { method: 'GET' }),
+  kioskPunch: ({ accessCode, pin }) => _publicReq('/api/asistencia/kiosco/punch', {
+    method: 'POST',
+    body: JSON.stringify({ access_code: accessCode, pin }),
   }),
 };

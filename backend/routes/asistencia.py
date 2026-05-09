@@ -9,12 +9,16 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
 from uuid import uuid4
 from datetime import datetime, date, timedelta, timezone
+import secrets
+import string
 
 from models.asistencia import (
     Schedule, ScheduleCreate, ScheduleUpdate,
     EmployeeSchedule, EmployeeScheduleAssign,
     AttendanceSession,
     DevicesConfig, DevicesConfigUpdate,
+    KioskAccessCredential, KioskAccessCreateRequest, KioskAccessUpdateRequest,
+    KioskPunchRequest, KioskPunchResponse, KioskPublicConfig,
 )
 from middlewares.auth import db, get_current_active_user, require_admin
 
@@ -95,6 +99,97 @@ def _planned_seconds_for_day(schedule: dict, weekday: int) -> int:
         if d.get("day") == weekday and d.get("enabled"):
             return int(_hours_in_ranges(d.get("ranges", [])) * 3600)
     return 0
+
+
+def _normalize_access_code(code: str) -> str:
+    raw = (code or "").strip().upper()
+    filtered = "".join(ch for ch in raw if ch.isalnum())
+    return filtered[:24]
+
+
+def _generate_access_code(prefix: Optional[str] = None) -> str:
+    base = _normalize_access_code(prefix or "")[:6]
+    suffix = "".join(secrets.choice(string.digits) for _ in range(5))
+    if not base:
+        base = "EMP"
+    return f"{base}{suffix}"
+
+
+def _generate_pin() -> str:
+    return "".join(secrets.choice(string.digits) for _ in range(4))
+
+
+async def _get_devices_config_doc() -> dict:
+    doc = await db.devices_config.find_one({"id": DEVICES_DOC_ID}, {"_id": 0})
+    if not doc:
+        default = {
+            "id": DEVICES_DOC_ID,
+            "panel_web_enabled": True,
+            "mobile_enabled": False,
+            "kiosco_enabled": False,
+            "biometric_enabled": False,
+        }
+        await db.devices_config.insert_one(dict(default))
+        return default
+    return doc
+
+
+async def _clock_in_employee(employee_id: str, employee_name: Optional[str], device: str = "panel_web") -> dict:
+    assignment = await db.employee_schedules.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not assignment:
+        raise HTTPException(400, "No tienes un horario asignado. Contacta al administrador.")
+
+    active = await _get_active_session(employee_id)
+    if active:
+        raise HTTPException(400, "Ya tienes una sesión de fichaje activa.")
+
+    schedule = await db.schedules.find_one({"id": assignment["schedule_id"]}, {"_id": 0})
+    today = date.today()
+    weekday = today.weekday()
+    planned = _planned_seconds_for_day(schedule, weekday) if schedule else 0
+
+    doc = {
+        "id": str(uuid4()),
+        "employee_id": employee_id,
+        "employee_name": employee_name,
+        "date": _today_str(),
+        "clock_in": _now_iso(),
+        "clock_out": None,
+        "duration_seconds": 0,
+        "breaks": [],
+        "status": "active",
+        "device": device,
+        "schedule_id": assignment["schedule_id"],
+        "schedule_name": schedule["name"] if schedule else None,
+        "planned_seconds": planned,
+    }
+    await db.attendance_sessions.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return doc
+
+
+async def _clock_out_employee(employee_id: str) -> dict:
+    session = await _get_active_session(employee_id)
+    if not session:
+        raise HTTPException(400, "No hay sesión activa.")
+
+    breaks = session.get("breaks", [])
+    if breaks and not breaks[-1].get("end"):
+        breaks[-1]["end"] = _now_iso()
+
+    now_iso = _now_iso()
+    duration = _seconds_worked({**session, "breaks": breaks, "clock_out": now_iso})
+
+    await db.attendance_sessions.update_one(
+        {"id": session["id"]},
+        {"$set": {
+            "status": "closed",
+            "clock_out": now_iso,
+            "breaks": breaks,
+            "duration_seconds": duration,
+        }},
+    )
+    return await db.attendance_sessions.find_one({"id": session["id"]}, {"_id": 0})
 
 
 # ============================================================
@@ -273,40 +368,7 @@ async def get_current_session(current_user: dict = Depends(get_current_active_us
 @router.post("/attendance/clock-in")
 async def clock_in(current_user: dict = Depends(get_current_active_user)):
     eid = await _get_user_employee_id(current_user)
-
-    # Requiere horario asignado
-    assignment = await db.employee_schedules.find_one({"employee_id": eid}, {"_id": 0})
-    if not assignment:
-        raise HTTPException(400, "No tienes un horario asignado. Contacta al administrador.")
-
-    # Si ya hay sesión activa, no permitir otra
-    active = await _get_active_session(eid)
-    if active:
-        raise HTTPException(400, "Ya tienes una sesión de fichaje activa.")
-
-    schedule = await db.schedules.find_one({"id": assignment["schedule_id"]}, {"_id": 0})
-    today = date.today()
-    weekday = today.weekday()
-    planned = _planned_seconds_for_day(schedule, weekday) if schedule else 0
-
-    doc = {
-        "id": str(uuid4()),
-        "employee_id": eid,
-        "employee_name": current_user.get("name"),
-        "date": _today_str(),
-        "clock_in": _now_iso(),
-        "clock_out": None,
-        "duration_seconds": 0,
-        "breaks": [],
-        "status": "active",
-        "device": "panel_web",
-        "schedule_id": assignment["schedule_id"],
-        "schedule_name": schedule["name"] if schedule else None,
-        "planned_seconds": planned,
-    }
-    await db.attendance_sessions.insert_one(dict(doc))
-    doc.pop("_id", None)
-    return doc
+    return await _clock_in_employee(eid, current_user.get("name"), device="panel_web")
 
 
 @router.post("/attendance/pause")
@@ -349,28 +411,7 @@ async def resume(current_user: dict = Depends(get_current_active_user)):
 @router.post("/attendance/clock-out")
 async def clock_out(current_user: dict = Depends(get_current_active_user)):
     eid = await _get_user_employee_id(current_user)
-    session = await _get_active_session(eid)
-    if not session:
-        raise HTTPException(400, "No hay sesión activa.")
-
-    # Cerrar pausa abierta si existe
-    breaks = session.get("breaks", [])
-    if breaks and not breaks[-1].get("end"):
-        breaks[-1]["end"] = _now_iso()
-
-    now_iso = _now_iso()
-    duration = _seconds_worked({**session, "breaks": breaks, "clock_out": now_iso})
-
-    await db.attendance_sessions.update_one(
-        {"id": session["id"]},
-        {"$set": {
-            "status": "closed",
-            "clock_out": now_iso,
-            "breaks": breaks,
-            "duration_seconds": duration,
-        }},
-    )
-    return await db.attendance_sessions.find_one({"id": session["id"]}, {"_id": 0})
+    return await _clock_out_employee(eid)
 
 
 @router.get("/attendance/records")
@@ -427,7 +468,6 @@ async def attendance_summary(
         else:
             worked_seconds += _seconds_worked(s)
 
-    # Tiempo teórico desde el horario asignado
     assignment = await db.employee_schedules.find_one({"employee_id": eid}, {"_id": 0})
     schedule = None
     if assignment:
@@ -452,6 +492,148 @@ async def attendance_summary(
 
 
 # ============================================================
+#                KIOSCO / ACCESS CREDENTIALS
+# ============================================================
+
+@router.get("/employees/{employee_id}/kiosk-access", response_model=Optional[KioskAccessCredential])
+async def get_employee_kiosk_access(
+    employee_id: str,
+    current_user: dict = Depends(require_admin),
+):
+    doc = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not doc:
+        return None
+    return doc
+
+
+@router.post("/employees/{employee_id}/kiosk-access/generate", response_model=KioskAccessCredential)
+async def generate_employee_kiosk_access(
+    employee_id: str,
+    data: KioskAccessCreateRequest,
+    current_user: dict = Depends(require_admin),
+):
+    employee = await db.employees.find_one({"id": employee_id}, {"_id": 0})
+    if not employee:
+        raise HTTPException(404, "Employee not found")
+
+    requested_code = _normalize_access_code(data.access_code or "")
+    access_code = requested_code or _generate_access_code(employee.get("name", "EMP"))
+
+    existing = await db.kiosk_access.find_one({"access_code": access_code, "employee_id": {"$ne": employee_id}}, {"_id": 0})
+    if existing:
+        raise HTTPException(400, "El código de acceso ya está en uso.")
+
+    pin = _generate_pin()
+    doc = {
+        "employee_id": employee_id,
+        "employee_name": employee.get("name"),
+        "access_code": access_code,
+        "pin": pin,
+        "updated_at": _now_iso(),
+        "updated_by": current_user.get("email"),
+    }
+    await db.kiosk_access.update_one(
+        {"employee_id": employee_id},
+        {"$set": doc, "$setOnInsert": {"id": str(uuid4())}},
+        upsert=True,
+    )
+    out = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0, "id": 0})
+    return out
+
+
+@router.put("/employees/{employee_id}/kiosk-access", response_model=KioskAccessCredential)
+async def update_employee_kiosk_access(
+    employee_id: str,
+    data: KioskAccessUpdateRequest,
+    current_user: dict = Depends(require_admin),
+):
+    existing = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Primero genera las credenciales de kiosco para este empleado.")
+
+    access_code = _normalize_access_code(data.access_code)
+    if len(access_code) < 3:
+        raise HTTPException(400, "El código de acceso debe tener al menos 3 caracteres.")
+
+    conflict = await db.kiosk_access.find_one({"access_code": access_code, "employee_id": {"$ne": employee_id}}, {"_id": 0})
+    if conflict:
+        raise HTTPException(400, "El código de acceso ya está en uso.")
+
+    await db.kiosk_access.update_one(
+        {"employee_id": employee_id},
+        {"$set": {
+            "access_code": access_code,
+            "updated_at": _now_iso(),
+            "updated_by": current_user.get("email"),
+        }},
+    )
+    out = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0, "id": 0})
+    return out
+
+
+@router.post("/employees/{employee_id}/kiosk-access/regenerate-pin", response_model=KioskAccessCredential)
+async def regenerate_employee_kiosk_pin(
+    employee_id: str,
+    current_user: dict = Depends(require_admin),
+):
+    existing = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Primero genera las credenciales de kiosco para este empleado.")
+
+    new_pin = _generate_pin()
+    await db.kiosk_access.update_one(
+        {"employee_id": employee_id},
+        {"$set": {
+            "pin": new_pin,
+            "updated_at": _now_iso(),
+            "updated_by": current_user.get("email"),
+        }},
+    )
+    out = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0, "id": 0})
+    return out
+
+
+@router.get("/kiosco/public-config", response_model=KioskPublicConfig)
+async def kiosk_public_config():
+    doc = await _get_devices_config_doc()
+    return KioskPublicConfig(kiosco_enabled=bool(doc.get("kiosco_enabled", False)))
+
+
+@router.post("/kiosco/punch", response_model=KioskPunchResponse)
+async def kiosk_punch(data: KioskPunchRequest):
+    cfg = await _get_devices_config_doc()
+    if not cfg.get("kiosco_enabled", False):
+        raise HTTPException(403, "El modo kiosco está deshabilitado por un administrador.")
+
+    access_code = _normalize_access_code(data.access_code)
+    pin = (data.pin or "").strip()
+    cred = await db.kiosk_access.find_one({"access_code": access_code, "pin": pin}, {"_id": 0})
+    if not cred:
+        raise HTTPException(401, "Código o PIN inválido.")
+
+    employee_id = cred.get("employee_id")
+    employee_name = cred.get("employee_name") or "Empleado"
+
+    active = await _get_active_session(employee_id)
+    if active:
+        session = await _clock_out_employee(employee_id)
+        return {
+            "action": "clock_out",
+            "message": f"Salida registrada para {employee_name}.",
+            "employee": {"id": employee_id, "name": employee_name},
+            "session": session,
+        }
+
+    session = await _clock_in_employee(employee_id, employee_name, device="kiosco")
+    return {
+        "action": "clock_in",
+        "message": f"Entrada registrada para {employee_name}.",
+        "employee": {"id": employee_id, "name": employee_name},
+        "session": session,
+    }
+
+
+# ============================================================
 #                       DEVICES
 # ============================================================
 
@@ -460,13 +642,7 @@ DEVICES_DOC_ID = "devices_singleton"
 
 @router.get("/devices", response_model=DevicesConfig)
 async def get_devices(current_user: dict = Depends(get_current_active_user)):
-    doc = await db.devices_config.find_one({"id": DEVICES_DOC_ID}, {"_id": 0})
-    if not doc:
-        default = {"id": DEVICES_DOC_ID, "panel_web_enabled": True,
-                   "mobile_enabled": False, "kiosco_enabled": False, "biometric_enabled": False}
-        await db.devices_config.insert_one(dict(default))
-        doc = {k: v for k, v in default.items() if k != "id"}
-        return DevicesConfig(**doc)
+    doc = await _get_devices_config_doc()
     doc.pop("id", None)
     return DevicesConfig(**doc)
 

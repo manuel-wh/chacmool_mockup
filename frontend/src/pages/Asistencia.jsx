@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Square, Settings, Calendar, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { Play, Settings, Calendar, AlertCircle, CheckCircle2, Clock, LogOut } from 'lucide-react';
 import { asistenciaAPI } from '../services/api';
 import { secondsToHM, secondsToHMS, toISODate, startOfWeek, addDays } from '../utils/asistencia';
 import AsistenciaRegistros from './AsistenciaRegistros';
@@ -155,69 +155,25 @@ const Asistencia = ({ isAdmin = false }) => {
               )}
             </div>
 
-            {/* Botones de acción */}
+            {/* Botón único de acción */}
             <div className="flex flex-col gap-3 max-w-sm mx-auto w-full">
-              {!session && (
-                <button
-                  data-testid="clock-in-btn"
-                  disabled={busy}
-                  onClick={() => handleAction(asistenciaAPI.clockIn)}
-                  className="bg-emerald-600 text-white rounded-xl px-5 py-4 font-medium hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 transition"
-                >
-                  <Play className="w-5 h-5" /> Iniciar jornada
-                </button>
-              )}
-              {session?.status === 'active' && (
-                <>
-                  <button
-                    data-testid="pause-btn"
-                    disabled={busy}
-                    onClick={() => handleAction(asistenciaAPI.pause)}
-                    className="bg-amber-500 text-white rounded-xl px-5 py-4 font-medium hover:bg-amber-600 disabled:opacity-50 inline-flex items-center justify-center gap-2 transition"
-                  >
-                    <Pause className="w-5 h-5" /> Pausar
-                  </button>
-                  <button
-                    data-testid="clock-out-btn"
-                    disabled={busy}
-                    onClick={() => handleAction(asistenciaAPI.clockOut)}
-                    className="bg-slate-900 text-white rounded-xl px-5 py-4 font-medium hover:bg-slate-800 disabled:opacity-50 inline-flex items-center justify-center gap-2 transition"
-                  >
-                    <Square className="w-5 h-5" /> Finalizar jornada
-                  </button>
-                </>
-              )}
-              {session?.status === 'paused' && (
-                <>
-                  <button
-                    data-testid="resume-btn"
-                    disabled={busy}
-                    onClick={() => handleAction(asistenciaAPI.resume)}
-                    className="bg-emerald-600 text-white rounded-xl px-5 py-4 font-medium hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 transition"
-                  >
-                    <Play className="w-5 h-5" /> Reanudar
-                  </button>
-                  <button
-                    data-testid="clock-out-btn-paused"
-                    disabled={busy}
-                    onClick={() => handleAction(asistenciaAPI.clockOut)}
-                    className="bg-slate-900 text-white rounded-xl px-5 py-4 font-medium hover:bg-slate-800 disabled:opacity-50 inline-flex items-center justify-center gap-2 transition"
-                  >
-                    <Square className="w-5 h-5" /> Finalizar jornada
-                  </button>
-                </>
-              )}
+              <button
+                data-testid="toggle-attendance-btn"
+                disabled={busy}
+                onClick={() => handleAction(session ? asistenciaAPI.clockOut : asistenciaAPI.clockIn)}
+                className={`rounded-xl px-5 py-4 font-medium disabled:opacity-50 inline-flex items-center justify-center gap-2 transition text-white ${
+                  session ? 'bg-slate-900 hover:bg-slate-800' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                {session ? <LogOut className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                {session ? 'Registrar salida' : 'Registrar entrada'}
+              </button>
 
               {session && (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 flex items-center gap-2 mt-2">
                   <Clock className="w-3.5 h-3.5" />
                   Iniciado: {new Date(session.clock_in).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  {session.status === 'paused' && (
-                    <span className="ml-auto inline-flex items-center gap-1 text-amber-700"><Pause className="w-3 h-3" /> Pausado</span>
-                  )}
-                  {session.status === 'active' && (
-                    <span className="ml-auto inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> Activa</span>
-                  )}
+                  <span className="ml-auto inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> Activa</span>
                 </div>
               )}
             </div>

@@ -99,3 +99,39 @@ class DevicesConfigUpdate(BaseModel):
     mobile_enabled: Optional[bool] = None
     kiosco_enabled: Optional[bool] = None
     biometric_enabled: Optional[bool] = None
+
+
+
+# ============== KIOSCO / ACCESS CREDENTIALS ==============
+
+class KioskAccessCredential(BaseModel):
+    employee_id: str
+    employee_name: Optional[str] = None
+    access_code: str
+    pin: str
+    updated_at: str
+    updated_by: Optional[str] = None
+
+
+class KioskAccessCreateRequest(BaseModel):
+    access_code: Optional[str] = None
+
+
+class KioskAccessUpdateRequest(BaseModel):
+    access_code: str = Field(..., min_length=3, max_length=24)
+
+
+class KioskPunchRequest(BaseModel):
+    access_code: str = Field(..., min_length=3, max_length=24)
+    pin: str = Field(..., min_length=4, max_length=8)
+
+
+class KioskPunchResponse(BaseModel):
+    action: Literal["clock_in", "clock_out"]
+    message: str
+    employee: dict
+    session: dict
+
+
+class KioskPublicConfig(BaseModel):
+    kiosco_enabled: bool = False

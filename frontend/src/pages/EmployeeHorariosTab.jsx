@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, X, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, X, Check, KeyRound, RefreshCcw } from 'lucide-react';
 import { asistenciaAPI } from '../services/api';
 import { DAY_LABELS, MONTH_LABELS, toISODate, secondsToHM, addDays, startOfWeek, hhmmToMinutes } from '../utils/asistencia';
 
@@ -16,6 +16,10 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
   const [summaryWeek, setSummaryWeek] = useState({ worked_seconds: 0, planned_seconds: 0 });
   const [loading, setLoading] = useState(true);
   const [showAssign, setShowAssign] = useState(false);
+  const [kioskAccess, setKioskAccess] = useState(null);
+  const [kioskCode, setKioskCode] = useState('');
+  const [kioskBusy, setKioskBusy] = useState(false);
+  const [kioskError, setKioskError] = useState('');
 
   const monthRange = useMemo(() => ({
     from: new Date(anchor.getFullYear(), anchor.getMonth(), 1),
@@ -44,14 +48,66 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
         dateTo: toISODate(weekRange.to),
       });
       setSummaryWeek({ worked_seconds: sw.worked_seconds, planned_seconds: sw.planned_seconds });
+
+      if (isAdmin) {
+        const ka = await asistenciaAPI.getEmployeeKioskAccess(employeeId);
+        setKioskAccess(ka || null);
+        setKioskCode(ka?.access_code || '');
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [employeeId, monthRange.from, monthRange.to, weekRange.from, weekRange.to]);
+  }, [employeeId, monthRange.from, monthRange.to, weekRange.from, weekRange.to, isAdmin]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const generateKioskAccess = async () => {
+    setKioskBusy(true);
+    setKioskError('');
+    try {
+      const dataResp = await asistenciaAPI.generateEmployeeKioskAccess(employeeId, kioskCode || null);
+      setKioskAccess(dataResp);
+      setKioskCode(dataResp.access_code || '');
+    } catch (e) {
+      setKioskError(e.message);
+    } finally {
+      setKioskBusy(false);
+    }
+  };
+
+  const saveKioskCode = async () => {
+    if (!kioskCode?.trim()) {
+      setKioskError('Ingresa un código de acceso válido.');
+      return;
+    }
+    setKioskBusy(true);
+    setKioskError('');
+    try {
+      const dataResp = await asistenciaAPI.updateEmployeeKioskAccess(employeeId, kioskCode.trim());
+      setKioskAccess(dataResp);
+      setKioskCode(dataResp.access_code || kioskCode.trim().toUpperCase());
+    } catch (e) {
+      setKioskError(e.message);
+    } finally {
+      setKioskBusy(false);
+    }
+  };
+
+  const regeneratePin = async () => {
+    setKioskBusy(true);
+    setKioskError('');
+    try {
+      const dataResp = await asistenciaAPI.regenerateEmployeeKioskPin(employeeId);
+      setKioskAccess(dataResp);
+      setKioskCode(dataResp.access_code || kioskCode);
+    } catch (e) {
+      setKioskError(e.message);
+    } finally {
+      setKioskBusy(false);
+    }
+  };
 
   const navMonth = (delta) => setAnchor((d) => new Date(d.getFullYear(), d.getMonth() + delta, 1));
 
@@ -105,6 +161,73 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
       ) : (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-900 inline-flex items-center gap-2">
           <Check className="w-4 h-4" /> Horario asignado: <strong>{schedule.name}</strong>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="border border-indigo-200 bg-indigo-50 rounded-2xl p-5" data-testid="employee-kiosk-access-card">
+          <div className="flex items-center gap-2 mb-3">
+            <KeyRound className="w-4 h-4 text-indigo-700" />
+            <h3 className="font-semibold text-indigo-900" style={{ fontFamily: 'Outfit' }}>Acceso de Kiosco</h3>
+          </div>
+          <p className="text-sm text-indigo-800 mb-4">
+            Configura código de acceso (editable) y PIN para que este empleado fiche en la vista de kiosco.
+          </p>
+
+          {kioskError && (
+            <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {kioskError}
+            </div>
+          )}
+
+          <div className="grid md:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="block text-xs font-medium text-indigo-800 mb-1">Código de acceso</label>
+              <input
+                value={kioskCode}
+                onChange={(e) => setKioskCode(e.target.value.toUpperCase())}
+                className="w-full border border-indigo-200 bg-white rounded-lg px-3 py-2 text-sm"
+                placeholder="Ej: EMP10234"
+                data-testid="kiosk-access-code"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-indigo-800 mb-1">PIN actual</label>
+              <input
+                value={kioskAccess?.pin || '----'}
+                readOnly
+                className="w-full border border-indigo-200 bg-white rounded-lg px-3 py-2 text-sm tracking-[0.25em] font-semibold"
+                data-testid="kiosk-access-pin"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={generateKioskAccess}
+              disabled={kioskBusy}
+              className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-60"
+              data-testid="kiosk-generate-btn"
+            >
+              {kioskAccess ? 'Regenerar credenciales' : 'Generar código + PIN'}
+            </button>
+            <button
+              onClick={saveKioskCode}
+              disabled={kioskBusy || !kioskAccess}
+              className="px-3 py-2 rounded-lg border border-indigo-200 bg-white text-indigo-800 text-sm hover:bg-indigo-100 disabled:opacity-60"
+              data-testid="kiosk-save-code-btn"
+            >
+              Guardar código
+            </button>
+            <button
+              onClick={regeneratePin}
+              disabled={kioskBusy || !kioskAccess}
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-indigo-200 bg-white text-indigo-800 text-sm hover:bg-indigo-100 disabled:opacity-60"
+              data-testid="kiosk-regenerate-pin-btn"
+            >
+              <RefreshCcw className="w-3.5 h-3.5" /> Regenerar PIN
+            </button>
+          </div>
         </div>
       )}
 

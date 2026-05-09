@@ -12,6 +12,7 @@ import PDIView from './pages/PDIView';
 import EmployeeProfile from './pages/EmployeeProfile';
 import Asistencia from './pages/Asistencia';
 import AsistenciaConfig from './pages/AsistenciaConfig';
+import KioscoPage from './pages/KioscoPage';
 import { 
   Users, 
   Target, 
@@ -1481,33 +1482,40 @@ const AppContent = () => {
     );
   }
 
-  if (!user) {
-    return <LoginPage />;
-  }
-
-  const isAdmin = user.role === 'admin';
+  const isAdmin = user?.role === 'admin';
 
   return (
     <Routes>
+      {/* Rutas públicas */}
       <Route path="/evaluate/:token" element={<PublicEvaluationForm />} />
-      <Route path="*" element={
-        <Layout isAdmin={isAdmin} setIsAdmin={() => {}}>
-          <Routes>
-            <Route path="/" element={<Dashboard isAdmin={isAdmin} />} />
-            <Route path="/9box" element={<EmpleadoAPage isAdmin={isAdmin} />} />
-            <Route path="/employees" element={<EmployeeList isAdmin={isAdmin} />} />
-            <Route path="/evaluations" element={<Evaluations360View isAdmin={isAdmin} />} />
-            <Route path="/pdi" element={<PDIView isAdmin={isAdmin} />} />
-            <Route path="/aciertos-desaciertos" element={<AciertosDesaciertosView isAdmin={isAdmin} />} />
-            <Route path="/asistencia" element={<Asistencia isAdmin={isAdmin} />} />
-            <Route path="/asistencia/configuracion" element={<AsistenciaConfig />} />
-            <Route path="/kpis" element={<KPIsView isAdmin={isAdmin} />} />
-            <Route path="/my-profile" element={<MyProfileResultsView isAdmin={isAdmin} />} />
-            <Route path="/manual-eval" element={<ManualEvaluation />} />
-            <Route path="/perfil/:employeeId" element={<EmployeeProfile />} />
-          </Routes>
-        </Layout>
-      } />
+      <Route path="/kiosco" element={<KioscoPage />} />
+
+      {/* Rutas privadas */}
+      {!user ? (
+        <Route path="*" element={<LoginPage />} />
+      ) : (
+        <Route
+          path="*"
+          element={
+            <Layout isAdmin={isAdmin} setIsAdmin={() => {}}>
+              <Routes>
+                <Route path="/" element={<Dashboard isAdmin={isAdmin} />} />
+                <Route path="/9box" element={<EmpleadoAPage isAdmin={isAdmin} />} />
+                <Route path="/employees" element={<EmployeeList isAdmin={isAdmin} />} />
+                <Route path="/evaluations" element={<Evaluations360View isAdmin={isAdmin} />} />
+                <Route path="/pdi" element={<PDIView isAdmin={isAdmin} />} />
+                <Route path="/aciertos-desaciertos" element={<AciertosDesaciertosView isAdmin={isAdmin} />} />
+                <Route path="/asistencia" element={<Asistencia isAdmin={isAdmin} />} />
+                <Route path="/asistencia/configuracion" element={<AsistenciaConfig />} />
+                <Route path="/kpis" element={<KPIsView isAdmin={isAdmin} />} />
+                <Route path="/my-profile" element={<MyProfileResultsView isAdmin={isAdmin} />} />
+                <Route path="/manual-eval" element={<ManualEvaluation />} />
+                <Route path="/perfil/:employeeId" element={<EmployeeProfile />} />
+              </Routes>
+            </Layout>
+          }
+        />
+      )}
     </Routes>
   );
 };

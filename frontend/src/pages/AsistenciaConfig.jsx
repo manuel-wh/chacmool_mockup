@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Search, MoreVertical, Trash2, Edit2, ChevronDown,
-  Calendar, Smartphone, MapPin, QrCode, Camera, Hash, ScanFace, Fingerprint,
+  Calendar, Smartphone, MapPin, QrCode, Camera, Hash, ScanFace, Fingerprint, Copy, ExternalLink,
 } from 'lucide-react';
 import { asistenciaAPI } from '../services/api';
 import { DAY_SHORT, MONTH_LABELS, minutesToHHMM, computeWeeklyHours } from '../utils/asistencia';
@@ -318,6 +318,9 @@ const CreateScheduleTypeModal = ({ onClose, onPick }) => (
 const DispositivosTab = () => {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [copyOk, setCopyOk] = useState(false);
+
+  const kioskUrl = `${window.location.origin}/kiosco`;
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -333,7 +336,6 @@ const DispositivosTab = () => {
 
   const toggle = async (key) => {
     if (key === 'panel_web_enabled') {
-      // Por ahora solo Panel web puede activarse
       return;
     }
     try {
@@ -344,13 +346,22 @@ const DispositivosTab = () => {
     }
   };
 
+  const copyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(kioskUrl);
+      setCopyOk(true);
+      setTimeout(() => setCopyOk(false), 1800);
+    } catch (e) {
+      alert('No se pudo copiar la URL.');
+    }
+  };
+
   if (loading || !config) return <div className="py-10 text-center text-slate-400">Cargando…</div>;
 
   return (
     <div data-testid="dispositivos-tab">
       <p className="text-sm text-slate-600 mb-6">
         Elige los dispositivos desde los que tus empleados podrán registrar su jornada laboral.
-        <span className="text-slate-400 ml-1">(Por ahora solo "Panel web" está activo)</span>
       </p>
 
       <div className="grid lg:grid-cols-3 gap-4 mb-4">
@@ -376,15 +387,45 @@ const DispositivosTab = () => {
         />
         <DeviceCard
           title="Kiosco"
-          description="Habilita puntos de registro en tu empresa sin necesidad de invertir en sistemas costosos."
+          description="Habilita un punto fijo de fichaje con código + PIN para tablet o teléfono."
           enabled={config.kiosco_enabled}
           onToggle={() => toggle('kiosco_enabled')}
           icons={[<QrCode key="q" className="w-5 h-5" />, <Camera key="c" className="w-5 h-5" />, <Hash key="h" className="w-5 h-5" />, <ScanFace key="s" className="w-5 h-5" />]}
-          footer="App Store · Google Play · URL"
-          comingSoon
+          footer="URL de kiosco"
           testId="card-kiosco"
         />
       </div>
+
+      {config.kiosco_enabled && (
+        <div className="border border-emerald-200 bg-emerald-50 rounded-2xl p-5 mb-4" data-testid="kiosk-url-box">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+            <h4 className="font-semibold text-emerald-900" style={{ fontFamily: 'Outfit' }}>Kiosco habilitado</h4>
+            <a
+              href={kioskUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-800"
+            >
+              Abrir kiosco <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+          <p className="text-sm text-emerald-900 mb-3">
+            Deja esta URL abierta en una tablet o teléfono para fichar con código de acceso y PIN.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="px-3 py-2 rounded-lg bg-white border border-emerald-200 text-sm text-emerald-900" data-testid="kiosk-url-value">
+              {kioskUrl}
+            </code>
+            <button
+              onClick={copyUrl}
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100"
+              data-testid="copy-kiosk-url"
+            >
+              <Copy className="w-4 h-4" /> {copyOk ? 'Copiada' : 'Copiar URL'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="border border-slate-200 rounded-2xl p-6 max-w-md">
         <div className="flex items-center gap-2 mb-2">

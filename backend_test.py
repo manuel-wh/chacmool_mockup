@@ -453,6 +453,321 @@ def test_delete_schedule(token: str, schedule_id: str) -> Dict[str, Any]:
         print_error(f"Invalid JSON response: {str(e)}")
         return {"success": False, "error": f"Invalid JSON: {str(e)}"}
 
+# ============================================================
+#                    KIOSK TESTS
+# ============================================================
+
+def test_get_kiosk_access(token: str, employee_id: str) -> Dict[str, Any]:
+    """Test getting kiosk access credentials for an employee"""
+    print_test_header(f"Get Kiosk Access - Employee: {employee_id}")
+    
+    url = f"{BACKEND_URL}/api/asistencia/employees/{employee_id}/kiosk-access"
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        print_info(f"GET {url}")
+        response = requests.get(url, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                print_info(f"Response: {json.dumps(data, indent=2)}")
+                print_success(f"Kiosk access found for employee {employee_id}")
+                return {"success": True, "credentials": data}
+            else:
+                print_info("No kiosk access credentials found (null response)")
+                return {"success": True, "credentials": None}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Get kiosk access failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_generate_kiosk_access(token: str, employee_id: str, custom_code: str = None) -> Dict[str, Any]:
+    """Test generating kiosk access credentials"""
+    print_test_header(f"Generate Kiosk Access - Employee: {employee_id}")
+    
+    url = f"{BACKEND_URL}/api/asistencia/employees/{employee_id}/kiosk-access/generate"
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"access_code": custom_code} if custom_code else {}
+    
+    try:
+        print_info(f"POST {url}")
+        print_info(f"Payload: {json.dumps(payload, indent=2)}")
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Response: {json.dumps(data, indent=2)}")
+            
+            required_fields = ["employee_id", "access_code", "pin"]
+            missing = [f for f in required_fields if f not in data]
+            if missing:
+                print_error(f"Missing fields: {missing}")
+                return {"success": False, "error": f"Missing fields: {missing}"}
+            
+            print_success(f"Generated kiosk access - Code: {data['access_code']}, PIN: {data['pin']}")
+            return {"success": True, "credentials": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Generate kiosk access failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_update_kiosk_access(token: str, employee_id: str, new_code: str) -> Dict[str, Any]:
+    """Test updating kiosk access code"""
+    print_test_header(f"Update Kiosk Access - Employee: {employee_id}")
+    
+    url = f"{BACKEND_URL}/api/asistencia/employees/{employee_id}/kiosk-access"
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"access_code": new_code}
+    
+    try:
+        print_info(f"PUT {url}")
+        print_info(f"Payload: {json.dumps(payload, indent=2)}")
+        response = requests.put(url, json=payload, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Response: {json.dumps(data, indent=2)}")
+            
+            if data.get("access_code") != new_code.strip().upper():
+                print_error(f"Code mismatch: expected {new_code.strip().upper()}, got {data.get('access_code')}")
+                return {"success": False, "error": "Code mismatch"}
+            
+            print_success(f"Updated kiosk access code to: {data['access_code']}")
+            return {"success": True, "credentials": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Update kiosk access failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_regenerate_pin(token: str, employee_id: str) -> Dict[str, Any]:
+    """Test regenerating PIN"""
+    print_test_header(f"Regenerate PIN - Employee: {employee_id}")
+    
+    url = f"{BACKEND_URL}/api/asistencia/employees/{employee_id}/kiosk-access/regenerate-pin"
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        print_info(f"POST {url}")
+        response = requests.post(url, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Response: {json.dumps(data, indent=2)}")
+            print_success(f"Regenerated PIN: {data['pin']}")
+            return {"success": True, "credentials": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Regenerate PIN failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_kiosk_public_config() -> Dict[str, Any]:
+    """Test public kiosk configuration endpoint"""
+    print_test_header("Kiosk Public Config")
+    
+    url = f"{BACKEND_URL}/api/asistencia/kiosco/public-config"
+    
+    try:
+        print_info(f"GET {url}")
+        response = requests.get(url, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Response: {json.dumps(data, indent=2)}")
+            print_success(f"Kiosk enabled: {data.get('kiosco_enabled', False)}")
+            return {"success": True, "config": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Get public config failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_kiosk_punch(access_code: str, pin: str, expected_action: str = None) -> Dict[str, Any]:
+    """Test kiosk punch (clock in/out)"""
+    print_test_header(f"Kiosk Punch - Code: {access_code}, PIN: {pin}")
+    
+    url = f"{BACKEND_URL}/api/asistencia/kiosco/punch"
+    payload = {"access_code": access_code, "pin": pin}
+    
+    try:
+        print_info(f"POST {url}")
+        print_info(f"Payload: {json.dumps(payload, indent=2)}")
+        response = requests.post(url, json=payload, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Response: {json.dumps(data, indent=2, default=str)}")
+            
+            action = data.get("action")
+            message = data.get("message")
+            
+            if expected_action and action != expected_action:
+                print_error(f"Action mismatch: expected {expected_action}, got {action}")
+                return {"success": False, "error": f"Expected {expected_action}, got {action}"}
+            
+            print_success(f"Punch successful - Action: {action}, Message: {message}")
+            return {"success": True, "punch": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Kiosk punch failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail, "status_code": response.status_code}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_enable_kiosk(token: str, enabled: bool = True) -> Dict[str, Any]:
+    """Test enabling/disabling kiosk"""
+    print_test_header(f"{'Enable' if enabled else 'Disable'} Kiosk")
+    
+    url = f"{BACKEND_URL}/api/asistencia/devices"
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"kiosco_enabled": enabled}
+    
+    try:
+        print_info(f"PUT {url}")
+        print_info(f"Payload: {json.dumps(payload, indent=2)}")
+        response = requests.put(url, json=payload, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Response: {json.dumps(data, indent=2)}")
+            print_success(f"Kiosk {'enabled' if enabled else 'disabled'}")
+            return {"success": True, "config": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Enable/disable kiosk failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_attendance_current(token: str) -> Dict[str, Any]:
+    """Test getting current attendance session"""
+    print_test_header("Get Current Attendance Session")
+    
+    url = f"{BACKEND_URL}/api/asistencia/attendance/current"
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        print_info(f"GET {url}")
+        response = requests.get(url, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Response keys: {list(data.keys())}")
+            print_success("Successfully retrieved current attendance session")
+            return {"success": True, "data": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Get current attendance failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_attendance_records(token: str) -> Dict[str, Any]:
+    """Test getting attendance records"""
+    print_test_header("Get Attendance Records")
+    
+    url = f"{BACKEND_URL}/api/asistencia/attendance/records"
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        print_info(f"GET {url}")
+        response = requests.get(url, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Found {len(data)} attendance records")
+            print_success("Successfully retrieved attendance records")
+            return {"success": True, "records": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Get attendance records failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def test_attendance_summary(token: str, date_from: str, date_to: str) -> Dict[str, Any]:
+    """Test getting attendance summary"""
+    print_test_header(f"Get Attendance Summary ({date_from} to {date_to})")
+    
+    url = f"{BACKEND_URL}/api/asistencia/attendance/summary?date_from={date_from}&date_to={date_to}"
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        print_info(f"GET {url}")
+        response = requests.get(url, headers=headers, timeout=10)
+        print_info(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_info(f"Worked seconds: {data.get('worked_seconds', 0)}, Planned seconds: {data.get('planned_seconds', 0)}")
+            print_success("Successfully retrieved attendance summary")
+            return {"success": True, "summary": data}
+        else:
+            error_detail = response.json().get("detail", "Unknown error") if response.text else "No response body"
+            print_error(f"Get attendance summary failed with status {response.status_code}")
+            print_error(f"Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+    except Exception as e:
+        print_error(f"Request failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def get_first_employee_id(token: str) -> str:
+    """Helper to get first employee ID from database"""
+    print_info("Fetching first employee ID from database...")
+    
+    url = f"{BACKEND_URL}/api/employees"
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            employees = response.json()
+            if employees and len(employees) > 0:
+                employee_id = employees[0].get("id")
+                print_success(f"Found employee ID: {employee_id}")
+                return employee_id
+        print_error("No employees found")
+        return None
+    except Exception as e:
+        print_error(f"Failed to get employee: {str(e)}")
+        return None
+
 def run_all_tests():
     """Run all backend tests"""
     print(f"\n{Colors.BOLD}{'='*80}{Colors.RESET}")
@@ -690,6 +1005,357 @@ def run_all_tests():
                 "status": "FAILED",
                 "message": delete_result.get("error", "Unknown error")
             })
+    
+    # ============================================================
+    #                    KIOSK TESTS
+    # ============================================================
+    
+    print(f"\n{Colors.BOLD}{'='*80}{Colors.RESET}")
+    print(f"{Colors.BOLD}SECTION 3: KIOSK TESTS{Colors.RESET}")
+    print(f"{Colors.BOLD}{'='*80}{Colors.RESET}")
+    
+    # Get an employee ID for testing
+    employee_id = get_first_employee_id(admin_token)
+    if not employee_id:
+        print_error("Cannot proceed with kiosk tests - no employee found")
+    else:
+        # Test 11: Enable kiosk
+        results["total_tests"] += 1
+        enable_result = test_enable_kiosk(admin_token, enabled=True)
+        if enable_result["success"]:
+            results["passed"] += 1
+            results["details"].append({
+                "test": "Enable Kiosk",
+                "status": "PASSED",
+                "message": "Successfully enabled kiosk"
+            })
+        else:
+            results["failed"] += 1
+            results["details"].append({
+                "test": "Enable Kiosk",
+                "status": "FAILED",
+                "message": enable_result.get("error", "Unknown error")
+            })
+        
+        # Test 12: Get kiosk public config
+        results["total_tests"] += 1
+        config_result = test_kiosk_public_config()
+        if config_result["success"]:
+            results["passed"] += 1
+            results["details"].append({
+                "test": "Get Kiosk Public Config",
+                "status": "PASSED",
+                "message": f"Kiosk enabled: {config_result['config'].get('kiosco_enabled', False)}"
+            })
+        else:
+            results["failed"] += 1
+            results["details"].append({
+                "test": "Get Kiosk Public Config",
+                "status": "FAILED",
+                "message": config_result.get("error", "Unknown error")
+            })
+        
+        # Test 13: Get kiosk access (should be None initially)
+        results["total_tests"] += 1
+        get_access_result = test_get_kiosk_access(admin_token, employee_id)
+        if get_access_result["success"]:
+            results["passed"] += 1
+            results["details"].append({
+                "test": "Get Kiosk Access (initial)",
+                "status": "PASSED",
+                "message": "Successfully retrieved kiosk access (may be null)"
+            })
+        else:
+            results["failed"] += 1
+            results["details"].append({
+                "test": "Get Kiosk Access (initial)",
+                "status": "FAILED",
+                "message": get_access_result.get("error", "Unknown error")
+            })
+        
+        # Test 14: Generate kiosk access with custom code
+        results["total_tests"] += 1
+        generate_result = test_generate_kiosk_access(admin_token, employee_id, custom_code="TEST123")
+        if generate_result["success"]:
+            results["passed"] += 1
+            results["details"].append({
+                "test": "Generate Kiosk Access",
+                "status": "PASSED",
+                "message": f"Generated credentials - Code: {generate_result['credentials']['access_code']}"
+            })
+            kiosk_credentials = generate_result["credentials"]
+        else:
+            results["failed"] += 1
+            results["details"].append({
+                "test": "Generate Kiosk Access",
+                "status": "FAILED",
+                "message": generate_result.get("error", "Unknown error")
+            })
+            kiosk_credentials = None
+        
+        # Test 15: Update kiosk access code
+        if kiosk_credentials:
+            results["total_tests"] += 1
+            update_result = test_update_kiosk_access(admin_token, employee_id, "UPDATED456")
+            if update_result["success"]:
+                results["passed"] += 1
+                results["details"].append({
+                    "test": "Update Kiosk Access Code",
+                    "status": "PASSED",
+                    "message": f"Updated code to: {update_result['credentials']['access_code']}"
+                })
+                kiosk_credentials = update_result["credentials"]
+            else:
+                results["failed"] += 1
+                results["details"].append({
+                    "test": "Update Kiosk Access Code",
+                    "status": "FAILED",
+                    "message": update_result.get("error", "Unknown error")
+                })
+        
+        # Test 16: Regenerate PIN
+        if kiosk_credentials:
+            results["total_tests"] += 1
+            regen_result = test_regenerate_pin(admin_token, employee_id)
+            if regen_result["success"]:
+                results["passed"] += 1
+                results["details"].append({
+                    "test": "Regenerate PIN",
+                    "status": "PASSED",
+                    "message": f"Regenerated PIN: {regen_result['credentials']['pin']}"
+                })
+                kiosk_credentials = regen_result["credentials"]
+            else:
+                results["failed"] += 1
+                results["details"].append({
+                    "test": "Regenerate PIN",
+                    "status": "FAILED",
+                    "message": regen_result.get("error", "Unknown error")
+                })
+        
+        # Test 17: Kiosk punch with invalid credentials (should fail)
+        results["total_tests"] += 1
+        invalid_punch = test_kiosk_punch("INVALID", "9999")
+        if not invalid_punch["success"] and invalid_punch.get("status_code") == 401:
+            results["passed"] += 1
+            results["details"].append({
+                "test": "Kiosk Punch - Invalid Credentials",
+                "status": "PASSED",
+                "message": "Correctly rejected invalid credentials with 401"
+            })
+        else:
+            results["failed"] += 1
+            results["details"].append({
+                "test": "Kiosk Punch - Invalid Credentials",
+                "status": "FAILED",
+                "message": "Should have rejected invalid credentials"
+            })
+        
+        # Setup: Create and assign schedule for punch testing
+        test_schedule_id = None
+        if kiosk_credentials:
+            print_info("Setting up schedule for punch testing...")
+            # Create a test schedule
+            schedule_payload = {
+                "name": "Test Kiosk Schedule",
+                "type": "fijo",
+                "template_kind": "jornada_continua",
+                "days": [
+                    {"day": i, "enabled": True if i < 5 else False, 
+                     "ranges": [{"start": "09:00", "end": "17:00"}] if i < 5 else []}
+                    for i in range(7)
+                ]
+            }
+            try:
+                resp = requests.post(
+                    f"{BACKEND_URL}/api/asistencia/schedules",
+                    json=schedule_payload,
+                    headers={"Authorization": f"Bearer {admin_token}"},
+                    timeout=10
+                )
+                if resp.status_code == 200:
+                    test_schedule_id = resp.json()["id"]
+                    print_success(f"Created test schedule: {test_schedule_id}")
+                    
+                    # Assign schedule to employee
+                    assign_resp = requests.post(
+                        f"{BACKEND_URL}/api/asistencia/employees/{employee_id}/schedule",
+                        json={"schedule_id": test_schedule_id},
+                        headers={"Authorization": f"Bearer {admin_token}"},
+                        timeout=10
+                    )
+                    if assign_resp.status_code == 200:
+                        print_success(f"Assigned schedule to employee {employee_id}")
+                    else:
+                        print_error(f"Failed to assign schedule: {assign_resp.status_code}")
+                else:
+                    print_error(f"Failed to create schedule: {resp.status_code}")
+            except Exception as e:
+                print_error(f"Setup failed: {str(e)}")
+        
+        # Test 18: First kiosk punch (clock_in)
+        if kiosk_credentials and test_schedule_id:
+            results["total_tests"] += 1
+            punch1 = test_kiosk_punch(
+                kiosk_credentials["access_code"],
+                kiosk_credentials["pin"],
+                expected_action="clock_in"
+            )
+            if punch1["success"]:
+                results["passed"] += 1
+                results["details"].append({
+                    "test": "Kiosk Punch #1 (clock_in)",
+                    "status": "PASSED",
+                    "message": f"First punch successful - Action: {punch1['punch']['action']}"
+                })
+            else:
+                results["failed"] += 1
+                results["details"].append({
+                    "test": "Kiosk Punch #1 (clock_in)",
+                    "status": "FAILED",
+                    "message": punch1.get("error", "Unknown error")
+                })
+        
+        # Test 19: Second kiosk punch (clock_out)
+        if kiosk_credentials and test_schedule_id:
+            results["total_tests"] += 1
+            punch2 = test_kiosk_punch(
+                kiosk_credentials["access_code"],
+                kiosk_credentials["pin"],
+                expected_action="clock_out"
+            )
+            if punch2["success"]:
+                results["passed"] += 1
+                results["details"].append({
+                    "test": "Kiosk Punch #2 (clock_out)",
+                    "status": "PASSED",
+                    "message": f"Second punch successful - Action: {punch2['punch']['action']}"
+                })
+            else:
+                results["failed"] += 1
+                results["details"].append({
+                    "test": "Kiosk Punch #2 (clock_out)",
+                    "status": "FAILED",
+                    "message": punch2.get("error", "Unknown error")
+                })
+        
+        # Cleanup: Delete test schedule
+        if test_schedule_id:
+            try:
+                requests.delete(
+                    f"{BACKEND_URL}/api/asistencia/schedules/{test_schedule_id}",
+                    headers={"Authorization": f"Bearer {admin_token}"},
+                    timeout=10
+                )
+                print_info(f"Cleaned up test schedule {test_schedule_id}")
+            except Exception:
+                pass
+        
+        # Test 20: Disable kiosk
+        results["total_tests"] += 1
+        disable_result = test_enable_kiosk(admin_token, enabled=False)
+        if disable_result["success"]:
+            results["passed"] += 1
+            results["details"].append({
+                "test": "Disable Kiosk",
+                "status": "PASSED",
+                "message": "Successfully disabled kiosk"
+            })
+        else:
+            results["failed"] += 1
+            results["details"].append({
+                "test": "Disable Kiosk",
+                "status": "FAILED",
+                "message": disable_result.get("error", "Unknown error")
+            })
+        
+        # Test 21: Kiosk punch with disabled kiosk (should fail)
+        if kiosk_credentials:
+            results["total_tests"] += 1
+            disabled_punch = test_kiosk_punch(
+                kiosk_credentials["access_code"],
+                kiosk_credentials["pin"]
+            )
+            if not disabled_punch["success"] and disabled_punch.get("status_code") == 403:
+                results["passed"] += 1
+                results["details"].append({
+                    "test": "Kiosk Punch - Disabled Kiosk",
+                    "status": "PASSED",
+                    "message": "Correctly rejected punch when kiosk disabled with 403"
+                })
+            else:
+                results["failed"] += 1
+                results["details"].append({
+                    "test": "Kiosk Punch - Disabled Kiosk",
+                    "status": "FAILED",
+                    "message": "Should have rejected punch when kiosk disabled"
+                })
+    
+    # ============================================================
+    #                    ATTENDANCE SMOKE TESTS
+    # ============================================================
+    
+    print(f"\n{Colors.BOLD}{'='*80}{Colors.RESET}")
+    print(f"{Colors.BOLD}SECTION 4: ATTENDANCE SMOKE TESTS{Colors.RESET}")
+    print(f"{Colors.BOLD}{'='*80}{Colors.RESET}")
+    
+    # Test 22: Get current attendance session
+    results["total_tests"] += 1
+    current_result = test_attendance_current(admin_token)
+    if current_result["success"]:
+        results["passed"] += 1
+        results["details"].append({
+            "test": "Get Current Attendance",
+            "status": "PASSED",
+            "message": "Successfully retrieved current attendance session"
+        })
+    else:
+        results["failed"] += 1
+        results["details"].append({
+            "test": "Get Current Attendance",
+            "status": "FAILED",
+            "message": current_result.get("error", "Unknown error")
+        })
+    
+    # Test 23: Get attendance records
+    results["total_tests"] += 1
+    records_result = test_attendance_records(admin_token)
+    if records_result["success"]:
+        results["passed"] += 1
+        results["details"].append({
+            "test": "Get Attendance Records",
+            "status": "PASSED",
+            "message": f"Successfully retrieved {len(records_result.get('records', []))} records"
+        })
+    else:
+        results["failed"] += 1
+        results["details"].append({
+            "test": "Get Attendance Records",
+            "status": "FAILED",
+            "message": records_result.get("error", "Unknown error")
+        })
+    
+    # Test 24: Get attendance summary
+    from datetime import date, timedelta
+    today = date.today()
+    week_ago = today - timedelta(days=7)
+    
+    results["total_tests"] += 1
+    summary_result = test_attendance_summary(admin_token, week_ago.isoformat(), today.isoformat())
+    if summary_result["success"]:
+        results["passed"] += 1
+        results["details"].append({
+            "test": "Get Attendance Summary",
+            "status": "PASSED",
+            "message": "Successfully retrieved attendance summary"
+        })
+    else:
+        results["failed"] += 1
+        results["details"].append({
+            "test": "Get Attendance Summary",
+            "status": "FAILED",
+            "message": summary_result.get("error", "Unknown error")
+        })
     
     # Print summary
     print(f"\n{Colors.BOLD}{'='*80}{Colors.RESET}")
