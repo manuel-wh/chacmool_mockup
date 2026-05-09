@@ -172,8 +172,13 @@ const EmployeeProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [kioskAccess, setKioskAccess] = useState(null);
   const [kioskCodeDraft, setKioskCodeDraft] = useState('');
+  const [kioskPinDraft, setKioskPinDraft] = useState('');
   const [kioskLoading, setKioskLoading] = useState(false);
   const [kioskBusy, setKioskBusy] = useState(false);
+  const [registroPeriod, setRegistroPeriod] = useState('mensual');
+  const [registros, setRegistros] = useState([]);
+  const [registrosLoading, setRegistrosLoading] = useState(false);
+
   const [kioskError, setKioskError] = useState('');
 
   const [activeEvalTab, setActiveEvalTab] = useState('cuestionarios');
@@ -227,6 +232,7 @@ const EmployeeProfile = () => {
       const data = await asistenciaAPI.getEmployeeKioskAccess(employeeId);
       setKioskAccess(data || null);
       setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
+      setKioskPinDraft((data?.pin || '').replace(/\D/g, ''));
     } catch (e) {
       setKioskError(e.message);
     } finally {
@@ -240,33 +246,39 @@ const EmployeeProfile = () => {
     }
   }, [activeSidebarSection, employeeId]);
 
-  const generateKioskCredentials = async () => {
-    setKioskBusy(true);
-    setKioskError('');
-    try {
-      const code = kioskCodeDraft ? kioskCodeDraft.replace(/\D/g, '') : null;
-      const data = await asistenciaAPI.generateEmployeeKioskAccess(employeeId, code);
-      setKioskAccess(data);
-      setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
-    } catch (e) {
-      setKioskError(e.message);
-    } finally {
-      setKioskBusy(false);
-    }
-  };
-
-  const saveKioskCode = async () => {
+  const saveKioskAccessChanges = async () => {
     const numericCode = kioskCodeDraft.replace(/\D/g, '');
-    if (numericCode.length < 4) {
+    const numericPin = kioskPinDraft.replace(/\D/g, '');
+
+    if (numericCode.length > 0 && numericCode.length < 4) {
       setKioskError('El código debe tener al menos 4 dígitos.');
       return;
     }
+
+    if (numericPin.length > 0 && numericPin.length < 4) {
+      setKioskError('El PIN debe tener al menos 4 dígitos.');
+      return;
+    }
+
     setKioskBusy(true);
     setKioskError('');
     try {
-      const data = await asistenciaAPI.updateEmployeeKioskAccess(employeeId, numericCode);
+      let data;
+      if (!numericCode && !kioskAccess) {
+        data = await asistenciaAPI.generateEmployeeKioskAccess(employeeId, null);
+      } else if (!kioskAccess) {
+        data = await asistenciaAPI.generateEmployeeKioskAccess(employeeId, numericCode);
+      } else {
+        data = await asistenciaAPI.updateEmployeeKioskAccess(employeeId, numericCode || kioskAccess.access_code, numericPin || null);
+      }
+
+      if (!kioskAccess && numericPin) {
+        data = await asistenciaAPI.updateEmployeeKioskAccess(employeeId, data.access_code, numericPin);
+      }
+
       setKioskAccess(data);
       setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
+      setKioskPinDraft((data?.pin || '').replace(/\D/g, ''));
     } catch (e) {
       setKioskError(e.message);
     } finally {
@@ -274,19 +286,46 @@ const EmployeeProfile = () => {
     }
   };
 
-  const regenerateKioskPin = async () => {
-    setKioskBusy(true);
-    setKioskError('');
+  const getRegistrosRange = () => {
+    const now = new Date();
+    if (registroPeriod === 'semanal') {
+      const day = (now.getDay() + 6) % 7;
+      const from = new Date(now);
+      from.setDate(now.getDate() - day);
+      const to = new Date(from);
+      to.setDate(from.getDate() + 6);
+      return { from, to };
+    }
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { from, to };
+  };
+
+  const loadRegistros = async () => {
+    setRegistrosLoading(true);
     try {
-      const data = await asistenciaAPI.regenerateEmployeeKioskPin(employeeId);
-      setKioskAccess(data);
-      setKioskCodeDraft((data?.access_code || '').replace(/\D/g, ''));
+      const { from, to } = getRegistrosRange();
+      const pad = (n) => String(n).padStart(2, '0');
+      const toISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const data = await asistenciaAPI.records({
+        employeeId,
+        dateFrom: toISO(from),
+        dateTo: toISO(to),
+      });
+      setRegistros(Array.isArray(data) ? data : []);
     } catch (e) {
-      setKioskError(e.message);
+      console.error('Error cargando registros:', e);
+      setRegistros([]);
     } finally {
-      setKioskBusy(false);
+      setRegistrosLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab === 'fichajes') {
+      loadRegistros();
+    }
+  }, [activeTab, registroPeriod, employeeId]);
 
   // Filtrar empleados para búsqueda
   const filteredEmployees = mockEmployeesData.filter(emp => 
@@ -297,7 +336,7 @@ const EmployeeProfile = () => {
   // Tabs principales
   const mainTabs = [
     { id: 'perfil', label: 'Perfil', icon: User },
-    { id: 'fichajes', label: 'Fichajes', icon: Clock },
+    { id: 'fichajes', label: 'Registros', icon: Clock },
     { id: 'ausencias', label: 'Ausencias y vacaciones', icon: Calendar },
     { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3 },
     { id: 'contratos', label: 'Contratos', icon: FileText },
@@ -666,9 +705,13 @@ const EmployeeProfile = () => {
                   <label className="block text-sm font-medium text-slate-700 mb-2">PIN</label>
                   <input
                     type="text"
-                    value={kioskAccess?.pin || '----'}
-                    readOnly
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 tracking-[0.3em] font-semibold"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={kioskPinDraft}
+                    onChange={(e) => setKioskPinDraft(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    readOnly={!isAdmin}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white tracking-[0.3em] font-semibold"
+                    placeholder={kioskAccess ? '' : 'Auto-generado al guardar'}
                     data-testid="profile-kiosk-pin"
                   />
                 </div>
@@ -683,28 +726,12 @@ const EmployeeProfile = () => {
               {isAdmin ? (
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={generateKioskCredentials}
+                    onClick={saveKioskAccessChanges}
                     disabled={kioskBusy}
                     className="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-60"
-                    data-testid="profile-kiosk-generate"
+                    data-testid="profile-kiosk-save-all"
                   >
-                    {kioskAccess ? 'Regenerar código + PIN' : 'Generar código + PIN'}
-                  </button>
-                  <button
-                    onClick={saveKioskCode}
-                    disabled={kioskBusy || !kioskAccess}
-                    className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60"
-                    data-testid="profile-kiosk-save-code"
-                  >
-                    Guardar código
-                  </button>
-                  <button
-                    onClick={regenerateKioskPin}
-                    disabled={kioskBusy || !kioskAccess}
-                    className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60"
-                    data-testid="profile-kiosk-regenerate-pin"
-                  >
-                    Regenerar PIN
+                    Guardar cambios
                   </button>
                 </div>
               ) : (
@@ -721,107 +748,92 @@ const EmployeeProfile = () => {
     return renderUnderConstructionContent();
   };
 
-  // Contenido de Fichajes
+  // Contenido de Registros
   const renderFichajesContent = () => {
+    const { from, to } = getRegistrosRange();
+    const formatDate = (d) => d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const formatTime = (iso) => (iso ? new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '--:--');
+    const formatHours = (secs) => {
+      const total = Math.max(0, Math.floor((secs || 0) / 60));
+      const h = Math.floor(total / 60);
+      const m = total % 60;
+      return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
+    };
+
+    const totalWorked = registros.reduce((acc, r) => acc + (r.duration_seconds || r.seconds_elapsed || 0), 0);
+
     return (
-      <div className="space-y-6">
-        {/* Header con total de horas */}
-        <div className="flex items-center justify-between">
+      <div className="space-y-6" data-testid="registros-tab">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <div className="text-sm text-slate-600 mb-1">Este mes</div>
-            <div className="text-2xl font-bold text-slate-900">
-              {mockFichajesData.totalHours} <span className="text-sm font-normal text-slate-500">/ {mockFichajesData.theoreticalHours} teóricas</span>
-            </div>
+            <div className="text-sm text-slate-600 mb-1">Total trabajado</div>
+            <div className="text-2xl font-bold text-slate-900">{formatHours(totalWorked)}</div>
+            <div className="text-xs text-slate-500 mt-1">Rango: {formatDate(from)} - {formatDate(to)}</div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <button className="p-2 hover:bg-slate-100 rounded-lg">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <span className="text-slate-900 font-medium">{mockFichajesData.month}</span>
-              <button className="p-2 hover:bg-slate-100 rounded-lg">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-            <select className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
-              <option>Mensual</option>
+          <div className="flex items-center gap-3">
+            <select
+              value={registroPeriod}
+              onChange={(e) => setRegistroPeriod(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+              data-testid="registros-period-select"
+            >
+              <option value="mensual">Mensual</option>
+              <option value="semanal">Semanal</option>
             </select>
-            <button className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-800">
-              Asignar fichaje
+            <button
+              onClick={loadRegistros}
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"
+            >
+              Actualizar
             </button>
           </div>
         </div>
 
-        {/* Timeline de fichajes */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <div className="min-w-[800px]">
-              {/* Header de horas */}
-              <div className="flex border-b border-slate-200">
-                <div className="w-48 flex-shrink-0 px-4 py-3 bg-slate-50 font-medium text-xs text-slate-600">
-                  Fecha / Horas
-                </div>
-                <div className="flex-1 flex">
-                  {[...Array(24)].map((_, i) => (
-                    <div key={i} className="flex-1 text-center text-xs text-slate-400 py-3 border-l border-slate-100">
-                      {i}:00
+        {registrosLoading ? (
+          <div className="py-10 text-center text-slate-400">Cargando registros…</div>
+        ) : registros.length === 0 ? (
+          <div className="text-center py-16 bg-white border border-slate-200 rounded-xl">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Sin registros en este periodo</h3>
+            <p className="text-sm text-slate-500">Cuando existan entradas/salidas aparecerán aquí.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {registros
+              .slice()
+              .sort((a, b) => String(b.clock_in || '').localeCompare(String(a.clock_in || '')))
+              .map((row) => {
+                const worked = row.duration_seconds || row.seconds_elapsed || 0;
+                return (
+                  <div key={row.id} className="bg-white border border-slate-200 rounded-xl p-4" data-testid={`registro-${row.id}`}>
+                    <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{row.date}</div>
+                        <div className="text-xs text-slate-500">{row.schedule_name || 'Sin horario'}</div>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full border ${row.status === 'closed' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'}`}>
+                        {row.status === 'closed' ? 'Cerrado' : 'En curso'}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Filas de días */}
-              {mockFichajesData.days.map((day, idx) => (
-                <div key={idx} className="flex border-b border-slate-100 hover:bg-slate-50">
-                  <div className="w-48 flex-shrink-0 px-4 py-4">
-                    <div className="text-sm font-medium text-slate-900">{day.date}</div>
-                    <div className="text-xs text-slate-500">
-                      {day.hours} / {day.theoretical}
+                    <div className="grid md:grid-cols-3 gap-2 text-sm">
+                      <div className="rounded-lg px-3 py-2 bg-blue-50 border border-blue-200 text-blue-800">
+                        <div className="text-xs uppercase tracking-wide text-blue-700">Entrada</div>
+                        <div className="font-semibold">{formatTime(row.clock_in)}</div>
+                      </div>
+                      <div className="rounded-lg px-3 py-2 bg-violet-50 border border-violet-200 text-violet-800">
+                        <div className="text-xs uppercase tracking-wide text-violet-700">Salida</div>
+                        <div className="font-semibold">{formatTime(row.clock_out)}</div>
+                      </div>
+                      <div className="rounded-lg px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800">
+                        <div className="text-xs uppercase tracking-wide text-emerald-700">Horas laboradas</div>
+                        <div className="font-semibold">{formatHours(worked)}</div>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex-1 relative py-4">
-                    {day.segments.map((segment, segIdx) => {
-                      const leftPercent = (segment.start / 24) * 100;
-                      const widthPercent = (segment.duration / 24) * 100;
-                      return (
-                        <div
-                          key={segIdx}
-                          className={`absolute h-6 ${segment.color} rounded`}
-                          style={{
-                            left: `${leftPercent}%`,
-                            width: `${widthPercent}%`,
-                            top: '50%',
-                            transform: 'translateY(-50%)'
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+                );
+              })}
           </div>
-        </div>
-
-        {/* Leyenda */}
-        <div className="flex items-center gap-6 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-teal-500 rounded"></div>
-            <span className="text-slate-600">Trabajo normal</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-blue-500 rounded"></div>
-            <span className="text-slate-600">Trabajo extendido</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-orange-400 rounded"></div>
-            <span className="text-slate-600">Descanso</span>
-          </div>
-        </div>
+        )}
       </div>
     );
   };

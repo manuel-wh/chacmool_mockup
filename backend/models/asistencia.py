@@ -54,12 +54,16 @@ class EmployeeSchedule(BaseModel):
     schedule_id: str
     schedule_name: str
     assigned_from: str  # ISO date
+    assigned_to: Optional[str] = None  # ISO date
+    no_end: bool = False
     assigned_at: str    # ISO datetime
 
 
 class EmployeeScheduleAssign(BaseModel):
     schedule_id: str
-    assigned_from: Optional[str] = None  # default: hoy
+    assigned_from: str
+    assigned_to: Optional[str] = None
+    no_end: bool = False
 
 
 # ============== ATTENDANCE / FICHAJE ==============
@@ -119,6 +123,7 @@ class KioskAccessCreateRequest(BaseModel):
 
 class KioskAccessUpdateRequest(BaseModel):
     access_code: str = Field(..., min_length=4, max_length=12)
+    pin: Optional[str] = Field(default=None, min_length=4, max_length=8)
 
 
 class KioskPunchRequest(BaseModel):

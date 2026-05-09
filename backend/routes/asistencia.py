@@ -115,6 +115,34 @@ def _generate_pin() -> str:
     return "".join(secrets.choice(string.digits) for _ in range(4))
 
 
+def _parse_iso_date(date_str: str) -> date:
+    return date.fromisoformat(date_str)
+
+
+def _to_end_date(assigned_to: Optional[str], no_end: bool) -> date:
+    if no_end or not assigned_to:
+        return date.max
+    return _parse_iso_date(assigned_to)
+
+
+def _ranges_overlap(start_a: date, end_a: date, start_b: date, end_b: date) -> bool:
+    return start_a <= end_b and start_b <= end_a
+
+
+def _assignment_active_on(assignment: dict, day: date) -> bool:
+    try:
+        start = _parse_iso_date(assignment.get("assigned_from"))
+    except Exception:
+        return False
+
+    assigned_to = assignment.get("assigned_to")
+    no_end = bool(assignment.get("no_end"))
+    end = _to_end_date(assigned_to, no_end)
+    return start <= day <= end
+
+    return "".join(secrets.choice(string.digits) for _ in range(4))
+
+
 async def _get_devices_config_doc() -> dict:
     doc = await db.devices_config.find_one({"id": DEVICES_DOC_ID}, {"_id": 0})
     if not doc:
@@ -131,9 +159,10 @@ async def _get_devices_config_doc() -> dict:
 
 
 async def _clock_in_employee(employee_id: str, employee_name: Optional[str], device: str = "panel_web") -> dict:
-    assignment = await db.employee_schedules.find_one({"employee_id": employee_id}, {"_id": 0})
+    assignments = await _get_assignments_for_employee(employee_id)
+    assignment = _pick_assignment_for_date(assignments, date.today())
     if not assignment:
-        raise HTTPException(400, "No tienes un horario asignado. Contacta al administrador.")
+        raise HTTPException(400, "No tienes un horario asignado para hoy. Contacta al administrador.")
 
     active = await _get_active_session(employee_id)
     if active:
@@ -253,6 +282,19 @@ async def update_schedule(
     return updated
 
 
+
+async def _get_assignments_for_employee(employee_id: str) -> List[dict]:
+    return await db.employee_schedules.find({"employee_id": employee_id}, {"_id": 0}).sort("assigned_from", 1).to_list(2000)
+
+
+def _pick_assignment_for_date(assignments: List[dict], day: date) -> Optional[dict]:
+    active = [a for a in assignments if _assignment_active_on(a, day)]
+    if not active:
+        return None
+    active.sort(key=lambda a: a.get("assigned_from", ""), reverse=True)
+    return active[0]
+
+
 @router.delete("/schedules/{schedule_id}")
 async def delete_schedule(schedule_id: str, current_user: dict = Depends(require_admin)):
     res = await db.schedules.delete_one({"id": schedule_id})
@@ -272,14 +314,31 @@ async def get_employee_schedule(
     employee_id: str,
     current_user: dict = Depends(get_current_active_user),
 ):
-    """Retorna asignación actual del empleado + el horario completo."""
-    assign = await db.employee_schedules.find_one(
-        {"employee_id": employee_id}, {"_id": 0}
-    )
-    if not assign:
-        return {"assigned": False, "schedule": None, "assignment": None}
-    schedule = await db.schedules.find_one({"id": assign["schedule_id"]}, {"_id": 0})
-    return {"assigned": True, "schedule": schedule, "assignment": assign}
+    """Retorna asignación activa de hoy + historial de asignaciones del empleado."""
+    assignments = await _get_assignments_for_employee(employee_id)
+    if not assignments:
+        return {"assigned": False, "schedule": None, "assignment": None, "assignments": []}
+
+    schedule_ids = list({a.get("schedule_id") for a in assignments if a.get("schedule_id")})
+    schedules = await db.schedules.find({"id": {"$in": schedule_ids}}, {"_id": 0}).to_list(1000)
+    schedules_by_id = {s["id"]: s for s in schedules}
+
+    today = date.today()
+    current_assignment = _pick_assignment_for_date(assignments, today)
+    current_schedule = schedules_by_id.get(current_assignment.get("schedule_id")) if current_assignment else None
+
+    enriched = []
+    for a in assignments:
+        row = dict(a)
+        row["schedule"] = schedules_by_id.get(a.get("schedule_id"))
+        enriched.append(row)
+
+    return {
+        "assigned": bool(current_assignment),
+        "schedule": current_schedule,
+        "assignment": current_assignment,
+        "assignments": enriched,
+    }
 
 
 @router.post("/employees/{employee_id}/schedule")
@@ -295,16 +354,44 @@ async def assign_schedule(
     if not employee:
         raise HTTPException(404, "Employee not found")
 
+    try:
+        start = _parse_iso_date(data.assigned_from)
+    except Exception:
+        raise HTTPException(400, "assigned_from inválido. Usa formato YYYY-MM-DD")
+
+    no_end = bool(data.no_end)
+    if not no_end and not data.assigned_to:
+        raise HTTPException(400, "Debes indicar fecha fin o marcar 'sin fecha de fin'.")
+
+    try:
+        end = _to_end_date(data.assigned_to, no_end)
+    except Exception:
+        raise HTTPException(400, "assigned_to inválido. Usa formato YYYY-MM-DD")
+
+    if end < start:
+        raise HTTPException(400, "La fecha fin no puede ser menor a la fecha inicio.")
+
+    existing = await _get_assignments_for_employee(employee_id)
+    for ex in existing:
+        ex_start = _parse_iso_date(ex.get("assigned_from"))
+        ex_end = _to_end_date(ex.get("assigned_to"), bool(ex.get("no_end")))
+        if _ranges_overlap(start, end, ex_start, ex_end):
+            ex_to = ex.get("assigned_to") or "sin fin"
+            raise HTTPException(
+                400,
+                f"Este horario se sobrelapa con otra asignación ({ex.get('assigned_from')} → {ex_to}).",
+            )
+
     doc = {
         "id": str(uuid4()),
         "employee_id": employee_id,
         "schedule_id": data.schedule_id,
         "schedule_name": schedule["name"],
-        "assigned_from": data.assigned_from or _today_str(),
+        "assigned_from": data.assigned_from,
+        "assigned_to": None if no_end else data.assigned_to,
+        "no_end": no_end,
         "assigned_at": _now_iso(),
     }
-    # Reemplaza asignación previa (1 horario activo a la vez)
-    await db.employee_schedules.delete_many({"employee_id": employee_id})
     await db.employee_schedules.insert_one(dict(doc))
     doc.pop("_id", None)
     return {"assigned": True, "assignment": doc, "schedule": schedule}
@@ -313,10 +400,15 @@ async def assign_schedule(
 @router.delete("/employees/{employee_id}/schedule")
 async def remove_employee_schedule(
     employee_id: str,
+    assignment_id: Optional[str] = Query(None),
     current_user: dict = Depends(require_admin),
 ):
-    await db.employee_schedules.delete_many({"employee_id": employee_id})
-    return {"removed": True}
+    query = {"employee_id": employee_id}
+    if assignment_id:
+        query["id"] = assignment_id
+
+    res = await db.employee_schedules.delete_many(query)
+    return {"removed": True, "deleted_count": res.deleted_count}
 
 
 # ============================================================
@@ -336,15 +428,18 @@ async def _get_active_session(employee_id: str):
 
 @router.get("/attendance/current")
 async def get_current_session(current_user: dict = Depends(get_current_active_user)):
-    """Sesión activa del usuario logueado (si la hay) + horario asignado."""
+    """Sesión activa del usuario logueado (si la hay) + horario asignado hoy."""
     eid = await _get_user_employee_id(current_user)
     session = await _get_active_session(eid)
-    assignment = await db.employee_schedules.find_one({"employee_id": eid}, {"_id": 0})
+
+    assignments = await _get_assignments_for_employee(eid)
+    today = date.today()
+    assignment = _pick_assignment_for_date(assignments, today)
+
     schedule = None
     if assignment:
         schedule = await db.schedules.find_one({"id": assignment["schedule_id"]}, {"_id": 0})
 
-    today = date.today()
     weekday = today.weekday()
     planned = _planned_seconds_for_day(schedule, weekday) if schedule else 0
 
@@ -355,6 +450,7 @@ async def get_current_session(current_user: dict = Depends(get_current_active_us
     return {
         "session": session,
         "schedule": schedule,
+        "assignment": assignment,
         "assigned": bool(assignment),
         "planned_seconds_today": planned,
         "server_time": _now_iso(),
@@ -464,10 +560,10 @@ async def attendance_summary(
         else:
             worked_seconds += _seconds_worked(s)
 
-    assignment = await db.employee_schedules.find_one({"employee_id": eid}, {"_id": 0})
-    schedule = None
-    if assignment:
-        schedule = await db.schedules.find_one({"id": assignment["schedule_id"]}, {"_id": 0})
+    assignments = await _get_assignments_for_employee(eid)
+    schedule_ids = list({a.get("schedule_id") for a in assignments if a.get("schedule_id")})
+    schedules = await db.schedules.find({"id": {"$in": schedule_ids}}, {"_id": 0}).to_list(2000)
+    schedules_by_id = {s["id"]: s for s in schedules}
 
     planned_seconds = 0
     try:
@@ -475,7 +571,9 @@ async def attendance_summary(
         d_to = date.fromisoformat(date_to)
         cur = d_from
         while cur <= d_to:
-            planned_seconds += _planned_seconds_for_day(schedule, cur.weekday())
+            assign = _pick_assignment_for_date(assignments, cur)
+            schedule_for_day = schedules_by_id.get(assign.get("schedule_id")) if assign else None
+            planned_seconds += _planned_seconds_for_day(schedule_for_day, cur.weekday())
             cur += timedelta(days=1)
     except Exception:
         pass
@@ -550,9 +648,11 @@ async def update_employee_kiosk_access(
     data: KioskAccessUpdateRequest,
     current_user: dict = Depends(require_admin),
 ):
+    employee = await db.employees.find_one({"id": employee_id}, {"_id": 0})
+    if not employee:
+        raise HTTPException(404, "Employee not found")
+
     existing = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0})
-    if not existing:
-        raise HTTPException(404, "Primero genera las credenciales de kiosco para este empleado.")
 
     access_code = _normalize_access_code(data.access_code)
     if len(access_code) < 4:
@@ -562,13 +662,24 @@ async def update_employee_kiosk_access(
     if conflict:
         raise HTTPException(400, "El código de acceso ya está en uso.")
 
+    pin = (data.pin or "").strip()
+    if pin and not pin.isdigit():
+        raise HTTPException(400, "El PIN debe contener solo números.")
+
+    if not pin:
+        pin = existing.get("pin") if existing else _generate_pin()
+
     await db.kiosk_access.update_one(
         {"employee_id": employee_id},
         {"$set": {
+            "employee_id": employee_id,
+            "employee_name": employee.get("name"),
             "access_code": access_code,
+            "pin": pin,
             "updated_at": _now_iso(),
             "updated_by": current_user.get("email"),
-        }},
+        }, "$setOnInsert": {"id": str(uuid4())}},
+        upsert=True,
     )
     out = await db.kiosk_access.find_one({"employee_id": employee_id}, {"_id": 0, "id": 0})
     return out

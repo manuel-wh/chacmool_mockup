@@ -522,7 +522,12 @@ const _req = async (path, opts = {}) => {
   });
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
-    try { const j = await res.json(); msg = j.detail || msg; } catch (_) {}
+    try {
+      const j = await res.json();
+      if (typeof j?.detail === 'string') msg = j.detail;
+      else if (Array.isArray(j?.detail)) msg = j.detail.map((d) => d?.msg || '').filter(Boolean).join(' · ') || msg;
+      else if (typeof j?.message === 'string') msg = j.message;
+    } catch (_) {}
     throw new Error(msg);
   }
   return res.json();
@@ -536,7 +541,12 @@ const _publicReq = async (path, opts = {}) => {
   });
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
-    try { const j = await res.json(); msg = j.detail || msg; } catch (_) {}
+    try {
+      const j = await res.json();
+      if (typeof j?.detail === 'string') msg = j.detail;
+      else if (Array.isArray(j?.detail)) msg = j.detail.map((d) => d?.msg || '').filter(Boolean).join(' · ') || msg;
+      else if (typeof j?.message === 'string') msg = j.message;
+    } catch (_) {}
     throw new Error(msg);
   }
   return res.json();
@@ -556,13 +566,24 @@ export const asistenciaAPI = {
 
   // Employee schedule
   getEmployeeSchedule: (employeeId) => _req(`/api/asistencia/employees/${employeeId}/schedule`),
-  assignSchedule: (employeeId, scheduleId, assignedFrom = null) => _req(
+  assignSchedule: (employeeId, scheduleId, assignedFrom, assignedTo = null, noEnd = false) => _req(
     `/api/asistencia/employees/${employeeId}/schedule`,
-    { method: 'POST', body: JSON.stringify({ schedule_id: scheduleId, assigned_from: assignedFrom }) }
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        schedule_id: scheduleId,
+        assigned_from: assignedFrom,
+        assigned_to: assignedTo,
+        no_end: noEnd,
+      }),
+    }
   ),
-  removeEmployeeSchedule: (employeeId) => _req(
-    `/api/asistencia/employees/${employeeId}/schedule`, { method: 'DELETE' }
-  ),
+  removeEmployeeSchedule: (employeeId, assignmentId = null) => {
+    const qs = new URLSearchParams();
+    if (assignmentId) qs.set('assignment_id', assignmentId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return _req(`/api/asistencia/employees/${employeeId}/schedule${suffix}`, { method: 'DELETE' });
+  },
 
   // Attendance / fichaje
   current: () => _req('/api/asistencia/attendance/current'),
@@ -595,9 +616,9 @@ export const asistenciaAPI = {
     `/api/asistencia/employees/${employeeId}/kiosk-access/generate`,
     { method: 'POST', body: JSON.stringify({ access_code: accessCode }) }
   ),
-  updateEmployeeKioskAccess: (employeeId, accessCode) => _req(
+  updateEmployeeKioskAccess: (employeeId, accessCode, pin = null) => _req(
     `/api/asistencia/employees/${employeeId}/kiosk-access`,
-    { method: 'PUT', body: JSON.stringify({ access_code: accessCode }) }
+    { method: 'PUT', body: JSON.stringify({ access_code: accessCode, pin }) }
   ),
   regenerateEmployeeKioskPin: (employeeId) => _req(
     `/api/asistencia/employees/${employeeId}/kiosk-access/regenerate-pin`,

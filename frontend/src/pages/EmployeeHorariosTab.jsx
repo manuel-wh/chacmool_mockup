@@ -10,7 +10,7 @@ import { DAY_LABELS, MONTH_LABELS, toISODate, secondsToHM, addDays, startOfWeek,
  * - Botón "Asignar horario" (solo admin)
  */
 const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
-  const [data, setData] = useState({ assigned: false, schedule: null, assignment: null });
+  const [data, setData] = useState({ assigned: false, schedule: null, assignment: null, assignments: [] });
   const [anchor, setAnchor] = useState(new Date());
   const [summaryMonth, setSummaryMonth] = useState({ worked_seconds: 0, planned_seconds: 0 });
   const [summaryWeek, setSummaryWeek] = useState({ worked_seconds: 0, planned_seconds: 0 });
@@ -58,6 +58,7 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
   if (loading) return <div className="py-8 text-center text-slate-400">Cargando…</div>;
 
   const schedule = data.schedule;
+  const assignments = data.assignments || [];
 
   return (
     <div className="space-y-6" data-testid="employee-horarios-tab">
@@ -81,7 +82,7 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
             className="bg-slate-900 text-white rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-800 inline-flex items-center gap-2"
             data-testid="assign-schedule-btn"
           >
-            {schedule ? 'Cambiar horario' : 'Asignar horario'}
+            Agregar asignación
           </button>
         )}
       </div>
@@ -92,29 +93,30 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
         <SummaryCard title="Semana actual" {...summaryWeek} testId="summary-week" />
       </div>
 
-      {/* Estado horario */}
-      {!schedule ? (
+      {/* Estado de asignaciones */}
+      {assignments.length === 0 ? (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-900">
-          <p className="font-medium">El empleado no tiene horario asignado.</p>
+          <p className="font-medium">El empleado no tiene horarios asignados.</p>
           <p className="text-sm text-amber-800 mt-1">
             {isAdmin
-              ? 'Asigna un horario para habilitar el registro de asistencia.'
-              : 'Contacta al administrador para asignar tu horario.'}
+              ? 'Asigna al menos un horario con rango de fechas para habilitar el registro de asistencia.'
+              : 'Contacta al administrador para asignar tus horarios.'}
           </p>
         </div>
       ) : (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-900 inline-flex items-center gap-2">
-          <Check className="w-4 h-4" /> Horario asignado: <strong>{schedule.name}</strong>
+          <Check className="w-4 h-4" /> Asignaciones activas en historial: <strong>{assignments.length}</strong>
         </div>
       )}
 
+      <AssignmentsList assignments={assignments} isAdmin={isAdmin} employeeId={employeeId} onChanged={fetchAll} />
+
       {/* Calendario mensual */}
-      <CalendarMonth anchor={anchor} schedule={schedule} />
+      <CalendarMonth anchor={anchor} assignments={assignments} />
 
       {showAssign && (
         <AssignModal
           employeeId={employeeId}
-          current={schedule?.id}
           onClose={() => setShowAssign(false)}
           onSaved={() => { setShowAssign(false); fetchAll(); }}
         />
@@ -142,7 +144,50 @@ const SummaryCard = ({ title, worked_seconds, planned_seconds, testId }) => {
   );
 };
 
-const CalendarMonth = ({ anchor, schedule }) => {
+const AssignmentsList = ({ assignments, isAdmin, employeeId, onChanged }) => {
+  const removeOne = async (assignmentId) => {
+    try {
+      await asistenciaAPI.removeEmployeeSchedule(employeeId, assignmentId);
+      onChanged();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  if (!assignments || assignments.length === 0) return null;
+
+  return (
+    <div className="border border-slate-200 rounded-2xl bg-white p-4" data-testid="assignments-list">
+      <h4 className="font-semibold text-slate-900 mb-3" style={{ fontFamily: 'Outfit' }}>Asignaciones de horario</h4>
+      <div className="space-y-2">
+        {assignments
+          .slice()
+          .sort((a, b) => String(a.assigned_from).localeCompare(String(b.assigned_from)))
+          .map((a) => (
+            <div key={a.id} className="border border-slate-100 rounded-xl p-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-slate-900">{a.schedule_name}</div>
+                <div className="text-xs text-slate-500">
+                  {a.assigned_from} → {a.no_end ? 'Sin fin' : (a.assigned_to || 'Sin fin')}
+                </div>
+              </div>
+              {isAdmin && (
+                <button
+                  onClick={() => removeOne(a.id)}
+                  className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+                  data-testid={`remove-assignment-${a.id}`}
+                >
+                  Eliminar
+                </button>
+              )}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+};
+
+const CalendarMonth = ({ anchor, assignments }) => {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   const firstDay = new Date(year, month, 1);
@@ -162,7 +207,24 @@ const CalendarMonth = ({ anchor, schedule }) => {
 
   const today = toISODate(new Date());
 
+  const assignmentForDate = (d) => {
+    const iso = toISODate(d);
+    const found = (assignments || []).filter((a) => {
+      const from = a.assigned_from;
+      const to = a.no_end ? null : a.assigned_to;
+      if (!from) return false;
+      if (iso < from) return false;
+      if (to && iso > to) return false;
+      return true;
+    });
+    if (found.length === 0) return null;
+    found.sort((a, b) => String(b.assigned_from).localeCompare(String(a.assigned_from)));
+    return found[0];
+  };
+
   const dayInfo = (d) => {
+    const assign = assignmentForDate(d);
+    const schedule = assign?.schedule;
     if (!schedule) return null;
     const wd = (d.getDay() + 6) % 7;
     const dayCfg = schedule.days?.find((x) => x.day === wd);
@@ -206,9 +268,12 @@ const CalendarMonth = ({ anchor, schedule }) => {
   );
 };
 
-const AssignModal = ({ employeeId, current, onClose, onSaved }) => {
+const AssignModal = ({ employeeId, onClose, onSaved }) => {
   const [list, setList] = useState([]);
-  const [picked, setPicked] = useState(current || '');
+  const [picked, setPicked] = useState('');
+  const [assignedFrom, setAssignedFrom] = useState(toISODate(new Date()));
+  const [assignedTo, setAssignedTo] = useState('');
+  const [noEnd, setNoEnd] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -218,24 +283,20 @@ const AssignModal = ({ employeeId, current, onClose, onSaved }) => {
 
   const save = async () => {
     if (!picked) return;
-    setBusy(true);
-    try {
-      await asistenciaAPI.assignSchedule(employeeId, picked);
-      onSaved();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
+    if (!assignedFrom) {
+      setErr('Selecciona una fecha de inicio.');
+      return;
     }
-  };
-
-  const removeAll = async () => {
+    if (!noEnd && !assignedTo) {
+      setErr('Selecciona fecha de fin o activa "Sin fecha fin".');
+      return;
+    }
     setBusy(true);
     try {
-      await asistenciaAPI.removeEmployeeSchedule(employeeId);
+      await asistenciaAPI.assignSchedule(employeeId, picked, assignedFrom, noEnd ? null : assignedTo, noEnd);
       onSaved();
     } catch (e) {
-      setErr(e.message);
+      setErr(e.message === 'HTTP 400' ? 'Este horario se sobrelapa con una asignación existente o tiene fechas inválidas.' : e.message);
     } finally {
       setBusy(false);
     }
@@ -271,13 +332,40 @@ const AssignModal = ({ employeeId, current, onClose, onSaved }) => {
               </div>
             </label>
           ))}
+          <div className="border border-slate-200 rounded-xl p-3">
+            <label className="block text-xs font-medium text-slate-700 mb-1">Fecha de inicio</label>
+            <input
+              type="date"
+              value={assignedFrom}
+              onChange={(e) => setAssignedFrom(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              data-testid="assign-from"
+            />
+          </div>
+
+          <div className="border border-slate-200 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-slate-700">Sin fecha fin</label>
+              <button
+                type="button"
+                onClick={() => setNoEnd((v) => !v)}
+                className={`w-10 h-6 rounded-full transition ${noEnd ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                data-testid="assign-no-end"
+              >
+                <span className={`block w-4 h-4 bg-white rounded-full transform transition ${noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <input
+              type="date"
+              value={assignedTo}
+              onChange={(e) => setAssignedTo(e.target.value)}
+              disabled={noEnd}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50"
+              data-testid="assign-to"
+            />
+          </div>
         </div>
         <div className="border-t border-slate-200 px-6 py-4 flex gap-2 justify-end">
-          {current && (
-            <button onClick={removeAll} disabled={busy} className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-xl">
-              Quitar horario
-            </button>
-          )}
           <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-xl hover:bg-slate-50">Cancelar</button>
           <button
             onClick={save}
@@ -285,7 +373,7 @@ const AssignModal = ({ employeeId, current, onClose, onSaved }) => {
             className="px-4 py-2 text-sm bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50"
             data-testid="confirm-assign"
           >
-            {busy ? 'Guardando…' : 'Asignar'}
+            {busy ? 'Guardando…' : 'Asignar horario'}
           </button>
         </div>
       </div>
