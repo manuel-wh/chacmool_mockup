@@ -115,7 +115,18 @@ Ver `/app/memory/test_credentials.md`.
 
 ## Testing
 - Backend: `pytest /app/backend/tests/` (24 tests asistencia + previos)
-- Frontend: testing_agent_v3_fork iteración 7 ✅
+- Frontend: testing_agent_v3_fork iteración 8 ✅ (10/10 flujos OK tras fix de useState y datepicker)
 
 ---
-*Última actualización: Feb 2026 — Módulo Asistencia completado*
+
+## Cambios Feb 2026 (sesión actual)
+- ✅ **Fix crash React**: `useState` mal colocado fuera del componente en `EmployeeProfile.jsx` → movido dentro
+- ✅ **Lista de empleados conectada a BBDD**: `employeesAPI.getEmployees()` → `getAll()` (App.js y EmployeeProfile.jsx)
+- ✅ **Navegación correcta**: al hacer click en un empleado del listado se muestra su perfil real (no María por defecto)
+- ✅ **formData refresca correctamente** cuando llega el directorio desde la API (dependencia `currentEmployee?.id`)
+- ✅ **Nuevo componente `MonthYearPicker`** (drill-down día/mes/año) en `/app/frontend/src/components/MonthYearPicker.jsx`
+- ✅ Integrado en tab Registros de `EmployeeProfile` y en `EmployeeHorariosTab`
+- ✅ Tooltip hover en barras de timeline ya implementado previamente y confirmado funcionando
+
+---
+*Última actualización: Feb 2026 — Fix crash + datepicker drill-down*
