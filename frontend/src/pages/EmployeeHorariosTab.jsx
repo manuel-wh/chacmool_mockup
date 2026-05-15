@@ -204,49 +204,53 @@ const AssignmentsList = ({ assignments, vacations, isAdmin, employeeId, onChange
     }
   };
 
-  if (!assignments || assignments.length === 0) return null;
+  if ((!assignments || assignments.length === 0) && (!vacations || vacations.length === 0)) return null;
 
   return (
     <div className="border border-slate-200 rounded-2xl bg-white p-4" data-testid="assignments-list">
-      <h4 className="font-semibold text-slate-900 mb-3" style={{ fontFamily: 'Outfit' }}>Asignaciones de horario</h4>
-      <div className="space-y-2">
-        {assignments
-          .slice()
-          .sort((a, b) => String(a.assigned_from).localeCompare(String(b.assigned_from)))
-          .map((a) => (
-            <div key={a.id} className="border border-slate-100 rounded-xl p-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-slate-900">{a.schedule_name}</div>
-                <div className="text-xs text-slate-500 flex items-center gap-2">
-                  <span>{a.assigned_from} → {a.no_end ? 'Sin fin' : (a.assigned_to || 'Sin fin')}</span>
-                  {a.alternate_monthly && (
-                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Mes sí / mes no</span>
+      {assignments && assignments.length > 0 && (
+        <>
+          <h4 className="font-semibold text-slate-900 mb-3" style={{ fontFamily: 'Outfit' }}>Asignaciones de horario</h4>
+          <div className="space-y-2">
+            {assignments
+              .slice()
+              .sort((a, b) => String(a.assigned_from).localeCompare(String(b.assigned_from)))
+              .map((a) => (
+                <div key={a.id} className="border border-slate-100 rounded-xl p-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-900">{a.schedule_name}</div>
+                    <div className="text-xs text-slate-500 flex items-center gap-2">
+                      <span>{a.assigned_from} → {a.no_end ? 'Sin fin' : (a.assigned_to || 'Sin fin')}</span>
+                      {a.alternate_monthly && (
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Mes sí / mes no</span>
+                      )}
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onEdit(a)}
+                        className="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                        data-testid={`edit-assignment-${a.id}`}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => removeOne(a.id)}
+                        className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+                        data-testid={`remove-assignment-${a.id}`}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
                   )}
                 </div>
-              </div>
-              {isAdmin && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => onEdit(a)}
-                    className="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
-                    data-testid={`edit-assignment-${a.id}`}
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => removeOne(a.id)}
-                    className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
-                    data-testid={`remove-assignment-${a.id}`}
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-      </div>
+              ))}
+          </div>
+        </>
+      )}
 
-      <div className="mt-4">
+      <div className={assignments && assignments.length > 0 ? 'mt-4' : ''}>
         <h5 className="text-sm font-semibold text-slate-800 mb-2">Vacaciones</h5>
         {(!vacations || vacations.length === 0) ? (
           <div className="text-xs text-slate-500">Sin planes de vacaciones.</div>
