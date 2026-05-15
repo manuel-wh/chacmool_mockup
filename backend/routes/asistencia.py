@@ -162,13 +162,32 @@ def _assignments_have_applicable_overlap(a: dict, b: dict) -> bool:
     if not _ranges_overlap(a_start, a_end, b_start, b_end):
         return False
 
+    # Fast path: si ninguna es intermitente, cualquier solape de rango es solape aplicable.
+    a_alt = bool(a.get("alternate_monthly"))
+    b_alt = bool(b.get("alternate_monthly"))
+    if not a_alt and not b_alt:
+        return True
+
     start = max(a_start, b_start)
     end = min(a_end, b_end)
-    cur = start
+
+    # Limitar el horizonte a 30 años para evitar OverflowError cuando una de las
+    # asignaciones es indefinida (`date.max`) y a la vez asegurar terminación
+    # del bucle. 30 años cubre todos los escenarios reales del producto.
+    horizon = date(min(start.year + 30, 9990), 12, 28)
+    if end > horizon:
+        end = horizon
+
+    # Iterar por mes — la regla intermitente es mensual, así que basta con
+    # comprobar un día representativo dentro de cada mes solapado.
+    cur = date(start.year, start.month, 1)
     while cur <= end:
-        if _assignment_applies_on(a, cur) and _assignment_applies_on(b, cur):
+        check_day = max(cur, start)
+        if _assignment_applies_on(a, check_day) and _assignment_applies_on(b, check_day):
             return True
-        cur += timedelta(days=1)
+        next_year = cur.year + (1 if cur.month == 12 else 0)
+        next_month = 1 if cur.month == 12 else cur.month + 1
+        cur = date(next_year, next_month, 1)
     return False
 
 
