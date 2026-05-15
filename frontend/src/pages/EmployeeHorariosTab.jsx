@@ -581,14 +581,18 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
 
           <div className="border border-slate-200 rounded-xl p-3">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-700">Sin fecha fin</label>
+              <div>
+                <label className="text-xs font-medium text-slate-700">Añadir fecha de fin</label>
+                <p className="text-[11px] text-slate-500 mt-0.5">{noEnd ? 'Asignación sin fecha fin (indefinida)' : 'Asignación con fecha fin'}</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setNoEnd((v) => !v)}
-                className={`w-10 h-6 rounded-full transition ${noEnd ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                className={`w-10 h-6 rounded-full transition ${!noEnd ? 'bg-emerald-500' : 'bg-slate-200'}`}
                 data-testid="assign-no-end"
+                aria-pressed={!noEnd}
               >
-                <span className={`block w-4 h-4 bg-white rounded-full transform transition ${noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
+                <span className={`block w-4 h-4 bg-white rounded-full transform transition ${!noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
               </button>
             </div>
             <SmartDatePicker value={assignedTo} onChange={setAssignedTo} disabled={noEnd} testId="assign-to" />
@@ -677,9 +681,18 @@ const EditAssignmentModal = ({ employeeId, assignment, onClose, onSaved }) => {
           ) : (
             <div className="border border-slate-200 rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-slate-700">Sin fecha fin</label>
-                <button type="button" onClick={() => setNoEnd((v) => !v)} className={`w-10 h-6 rounded-full transition ${noEnd ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-                  <span className={`block w-4 h-4 bg-white rounded-full transform transition ${noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Añadir fecha de fin</label>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{noEnd ? 'Asignación sin fecha fin (indefinida)' : 'Asignación con fecha fin'}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNoEnd((v) => !v)}
+                  className={`w-10 h-6 rounded-full transition ${!noEnd ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                  data-testid="edit-assign-no-end"
+                  aria-pressed={!noEnd}
+                >
+                  <span className={`block w-4 h-4 bg-white rounded-full transform transition ${!noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
                 </button>
               </div>
               <SmartDatePicker value={assignedTo} onChange={setAssignedTo} disabled={noEnd} testId="edit-assignment-to" />
