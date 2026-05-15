@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { asistenciaAPI } from '../services/api';
+import { asistenciaAPI, employeesAPI } from '../services/api';
 import EmployeeHorariosTab from './EmployeeHorariosTab';
 import {
   ArrowLeft, Search, User, Briefcase, FileText, Calendar, Target,
@@ -157,6 +157,7 @@ const mockFichajesData = {
     ]}
   ]
 };
+  const [directoryEmployees, setDirectoryEmployees] = useState(mockEmployeesData);
 
 const EmployeeProfile = () => {
   const { employeeId } = useParams();
@@ -185,8 +186,52 @@ const EmployeeProfile = () => {
 
   const [activeEvalTab, setActiveEvalTab] = useState('cuestionarios');
 
+
+  useEffect(() => {
+    const loadEmployeesDirectory = async () => {
+      try {
+        const list = await employeesAPI.getEmployees();
+        if (!Array.isArray(list) || list.length === 0) return;
+
+        const normalized = list.map((emp) => {
+          const parts = String(emp.name || '').trim().split(' ').filter(Boolean);
+          return {
+            id: String(emp.id),
+            name: emp.name || 'Empleado',
+            firstName: parts[0] || 'Nombre',
+            lastName: parts[1] || 'Apellido',
+            secondLastName: parts.slice(2).join(' ') || '',
+            email: emp.email || '',
+            position: emp.position || 'Colaborador',
+            department: emp.department || 'General',
+            phone: '+52 55 0000 0000',
+            extension: '100',
+            primaryIdType: 'INE',
+            secondaryIdType: 'CURP',
+            nationality: 'México',
+            maritalStatus: 'Soltero(a)',
+            birthDate: '1990-01-01',
+            gender: 'No especificado',
+            shareBirthday: false,
+            address: 'Dirección no registrada',
+            postalCode: '00000',
+            colony: 'N/A',
+            municipality: 'N/A',
+            profileImage: emp.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=300&h=300&fit=crop&crop=face',
+          };
+        });
+
+        setDirectoryEmployees(normalized);
+      } catch (e) {
+        console.error('No se pudo cargar directorio real de empleados', e);
+      }
+    };
+
+    loadEmployeesDirectory();
+  }, []);
+
   // Obtener empleado actual
-  const currentEmployee = mockEmployeesData.find(emp => emp.id === employeeId) || mockEmployeesData[0];
+  const currentEmployee = directoryEmployees.find(emp => emp.id === employeeId) || directoryEmployees[0];
   
   // Estado del formulario
   const [formData, setFormData] = useState({
@@ -333,7 +378,7 @@ const EmployeeProfile = () => {
   }, [activeTab, registroPeriod, registroAnchor, employeeId]);
 
   // Filtrar empleados para búsqueda
-  const filteredEmployees = mockEmployeesData.filter(emp => 
+  const filteredEmployees = directoryEmployees.filter(emp => 
     emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -897,7 +942,12 @@ const EmployeeProfile = () => {
                         <div className="text-slate-800 font-medium">{formatHours(worked)} / <span className="text-slate-500">{formatHours(planned)}</span></div>
                         <div className="relative h-5 bg-slate-100 rounded-full">
                           {segs.map((s) => (
-                            <div key={s.id} className={`absolute top-0 h-5 rounded-full ${s.color} hover:opacity-85`} style={{ left: `${s.left}%`, width: `${s.width}%` }} title={`${s.startLabel} - ${s.endLabel}`} />
+                            <div key={s.id} className="group absolute top-0 h-5" style={{ left: `${s.left}%`, width: `${s.width}%` }}>
+                              <div className={`w-full h-5 rounded-full ${s.color} hover:opacity-85`} />
+                              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-8 opacity-0 group-hover:opacity-100 transition px-2 py-1 rounded-md bg-slate-900 text-white text-[11px] whitespace-nowrap z-10">
+                                {s.startLabel} - {s.endLabel}
+                              </div>
+                            </div>
                           ))}
                         </div>
                       </div>

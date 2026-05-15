@@ -1294,7 +1294,30 @@ const MyProfileResultsView = ({ isAdmin }) => {
 const EmployeeList = ({ isAdmin }) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
-  const filteredEmployees = mockEmployees.filter(emp => emp.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const [employeesData, setEmployeesData] = useState([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const list = await employeesAPI.getEmployees();
+        const mapped = (Array.isArray(list) ? list : []).map((emp) => ({
+          id: String(emp.id),
+          name: emp.name,
+          position: emp.position || 'Colaborador',
+          avatar: emp.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(emp.name || 'employee')}`,
+          valoresScore: emp.eval_360_score ?? 70,
+          resultadosScore: emp.kpis_score ?? 70,
+          evaluatorCounts: { superior: 1, subordinados: 1, companeros: 1, cliente: 0 },
+        }));
+        setEmployeesData(mapped);
+      } catch (e) {
+        console.error('Error cargando empleados:', e);
+      }
+    };
+    load();
+  }, []);
+
+  const filteredEmployees = employeesData.filter(emp => emp.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className="animate-fade-in">
@@ -1339,8 +1362,7 @@ const EmployeeList = ({ isAdmin }) => {
               const colors = classificationColors[classification.color];
               const totalEvaluators = Object.values(emp.evaluatorCounts).reduce((a, b) => a + b, 0);
               
-              // Extraer ID del empleado (EMP-001 -> 1)
-              const employeeId = emp.id.replace('EMP-00', '');
+              const employeeId = String(emp.id);
               
               return (
                 <tr 
