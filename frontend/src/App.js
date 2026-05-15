@@ -1299,7 +1299,7 @@ const EmployeeList = ({ isAdmin }) => {
   useEffect(() => {
     const load = async () => {
       try {
-        const list = await employeesAPI.getEmployees();
+        const list = await employeesAPI.getAll();
         const mapped = (Array.isArray(list) ? list : []).map((emp) => ({
           id: String(emp.id),
           name: emp.name,

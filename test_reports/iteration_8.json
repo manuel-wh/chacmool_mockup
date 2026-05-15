@@ -1,0 +1,46 @@
+{
+  "summary": "Frontend regression after useState crash fix + employeesAPI.getAll rename + new MonthYearPicker drill-down datepicker. All 10 requested flows pass cleanly. No crash, no console errors observed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "1) Login with María (Admin) via quick button succeeds, no red screen / no 'Cannot read properties of null (reading useState)' overlay. URL=/ shows dashboard.",
+    "2) /employees lists 8 employees from BBDD: María García López, Juan Rodríguez, Laura Sánchez, Carlos Mendoza, Ana Martínez, Roberto Fernández, Patricia Ruiz, Diego Morales (table has 8 rows).",
+    "3) Click on row #1 (Juan Rodríguez) → navigates to /perfil/2 and header displays 'Juan Rodríguez - Senior Developer - Desarrollo' (NOT María). formData is correctly refreshed for the clicked employee.",
+    "4) Registros tab loads. Timeline shows 24/24 hour labels (0..23 horizontal columns).",
+    "5) datepicker-trigger opens datepicker-popover with 12 month buttons (datepicker-month-0..11). Trigger label 'Mayo 2026' visible.",
+    "6) datepicker-year-trigger switches view to years grid: 12 year buttons (3x4) rendered. Clicking a year returns to months view with 12 months still rendered.",
+    "7) Clicking a different month (Junio when current was Mayo) closes popover and updates trigger label from 'Mayo 2026' to 'Junio 2016' (year was changed to 2016 first via year drill-down then month=Junio). Drill-down behavior correct.",
+    "8) registros-period-select changed to 'Semanal' via native select; weekly day labels (Lun..Dom / L-M-X-J-V-S-D) are rendered (13 matches indicating weekly grid visible).",
+    "9) Horarios tab on /perfil/2 renders the MonthYearPicker (datepicker-trigger), popover opens correctly, plus month-prev, month-next, and assign-schedule-btn data-testids all present. Monthly calendar visible with horario normal segments and 'Vacaciones 2026-05-10 → 2026-05-12'.",
+    "10) Final crash check: no useState/null overlay present after full navigation. Empleado may have no segments (segment-bar-* not found for Juan) which is acceptable; no errors raised during hover attempts."
+  ],
+  "test_report_links": [
+    "/app/test_reports/iteration_8.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MonthYearPicker drill-down works correctly. Minor UX note: when user opens year drill-down and selects a year, then picks a month, the picker also commits the new year (e.g. label became 'Junio 2016'). This is consistent with shadcn-style drill-down pickers; confirm this matches product intent (vs. just navigating the months grid for browsing).",
+    "EmployeeProfile.jsx is large (~900+ lines per file_of_reference). Consider splitting tabs into separate components for maintainability (Registros, Horarios already split which is good)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped per request",
+    "frontend": "100% (10/10 flows pass)"
+  },
+  "test_credentials": {
+    "admin": "maria@empresa.com / maria123",
+    "empleado": "juan@empresa.com / juan123"
+  },
+  "seed_data_creation": "None. Used existing BBDD with 8 employees and existing horario assignments for employee 2 (Juan).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All previously-reported issues (React useState crash + employees list empty due to wrong API method name) are fully resolved. MonthYearPicker exists at /app/frontend/src/components/MonthYearPicker.jsx and is used in both EmployeeProfile Registros tab and EmployeeHorariosTab. data-testids: datepicker-trigger, datepicker-popover, datepicker-year-trigger, datepicker-month-{0..11}, datepicker-year-{Y}, datepicker-day-{D}. Backend was not retested per request.",
+  "rca_of_the_issue": "N/A - fixes verified working."
+}

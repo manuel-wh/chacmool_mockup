@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, X, Check } from 'lucide-react';
 import { asistenciaAPI } from '../services/api';
 import { DAY_LABELS, MONTH_LABELS, toISODate, secondsToHM, addDays, startOfWeek, hhmmToMinutes } from '../utils/asistencia';
+import MonthYearPicker from '../components/MonthYearPicker';
 
 /**
  * Tab "Horarios" del perfil del empleado.
@@ -68,14 +69,16 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
     <div className="space-y-6" data-testid="employee-horarios-tab">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3 border border-slate-200 rounded-full px-3 py-2 bg-white">
-          <button onClick={() => navMonth(-1)} className="text-slate-500 hover:text-slate-900" data-testid="month-prev">
+        <div className="flex items-center gap-1 border border-slate-200 rounded-full px-1.5 py-1 bg-white">
+          <button onClick={() => navMonth(-1)} className="p-1 text-slate-500 hover:text-slate-900" data-testid="month-prev">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm font-medium text-slate-900 min-w-[100px] text-center">
-            {MONTH_LABELS[anchor.getMonth()]} {anchor.getFullYear()}
-          </span>
-          <button onClick={() => navMonth(1)} className="text-slate-500 hover:text-slate-900" data-testid="month-next">
+          <MonthYearPicker
+            value={anchor}
+            onChange={(d) => setAnchor(new Date(d.getFullYear(), d.getMonth(), 1))}
+            mode="month"
+          />
+          <button onClick={() => navMonth(1)} className="p-1 text-slate-500 hover:text-slate-900" data-testid="month-next">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

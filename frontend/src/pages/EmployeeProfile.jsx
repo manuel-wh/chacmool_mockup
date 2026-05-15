@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { asistenciaAPI, employeesAPI } from '../services/api';
 import EmployeeHorariosTab from './EmployeeHorariosTab';
+import MonthYearPicker from '../components/MonthYearPicker';
 import {
   ArrowLeft, Search, User, Briefcase, FileText, Calendar, Target,
   ClipboardList, Clock, CheckSquare, BarChart3, Settings, Shield,
@@ -157,7 +158,6 @@ const mockFichajesData = {
     ]}
   ]
 };
-  const [directoryEmployees, setDirectoryEmployees] = useState(mockEmployeesData);
 
 const EmployeeProfile = () => {
   const { employeeId } = useParams();
@@ -186,11 +186,13 @@ const EmployeeProfile = () => {
 
   const [activeEvalTab, setActiveEvalTab] = useState('cuestionarios');
 
+  const [directoryEmployees, setDirectoryEmployees] = useState(mockEmployeesData);
+
 
   useEffect(() => {
     const loadEmployeesDirectory = async () => {
       try {
-        const list = await employeesAPI.getEmployees();
+        const list = await employeesAPI.getAll();
         if (!Array.isArray(list) || list.length === 0) return;
 
         const normalized = list.map((emp) => {
@@ -251,8 +253,9 @@ const EmployeeProfile = () => {
     municipality: currentEmployee.municipality
   });
 
-  // Actualizar formData cuando cambie el empleado
+  // Actualizar formData cuando cambie el empleado o cuando termine de cargar el directorio
   useEffect(() => {
+    if (!currentEmployee) return;
     setFormData({
       firstName: currentEmployee.firstName,
       lastName: currentEmployee.lastName,
@@ -270,7 +273,8 @@ const EmployeeProfile = () => {
       municipality: currentEmployee.municipality,
     });
     setIsEditing(false);
-  }, [employeeId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeId, currentEmployee?.id]);
 
   const loadKioskAccess = async () => {
     setKioskLoading(true);
@@ -897,10 +901,15 @@ const EmployeeProfile = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center border border-slate-200 rounded-2xl px-3 py-2 bg-white">
-              <button onClick={() => navPeriod(-1)} className="px-1 text-slate-500 hover:text-slate-900">‹</button>
-              <span className="px-3 min-w-[170px] text-center text-sm font-medium text-slate-900 capitalize">{rangeLabel}</span>
-              <button onClick={() => navPeriod(1)} className="px-1 text-slate-500 hover:text-slate-900">›</button>
+            <div className="flex items-center border border-slate-200 rounded-2xl px-1.5 py-1 bg-white">
+              <button onClick={() => navPeriod(-1)} className="px-2 text-slate-500 hover:text-slate-900" data-testid="registros-prev">‹</button>
+              <MonthYearPicker
+                value={registroAnchor}
+                onChange={(d) => setRegistroAnchor(d)}
+                mode={registroPeriod === 'mensual' ? 'month' : 'week'}
+                label={rangeLabel}
+              />
+              <button onClick={() => navPeriod(1)} className="px-2 text-slate-500 hover:text-slate-900" data-testid="registros-next">›</button>
             </div>
 
             <select
