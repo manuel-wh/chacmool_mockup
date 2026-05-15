@@ -56,6 +56,7 @@ class EmployeeSchedule(BaseModel):
     assigned_from: str  # ISO date
     assigned_to: Optional[str] = None  # ISO date
     no_end: bool = False
+    alternate_monthly: bool = False
     assigned_at: str    # ISO datetime
 
 
@@ -64,6 +65,7 @@ class EmployeeScheduleAssign(BaseModel):
     assigned_from: str
     assigned_to: Optional[str] = None
     no_end: bool = False
+    alternate_monthly: bool = False
 
 
 # ============== ATTENDANCE / FICHAJE ==============

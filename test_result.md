@@ -413,10 +413,22 @@ backend:
         agent: "testing"
         comment: "✅ SMOKE TESTS PASADOS (2/2). 1) GET /api/asistencia/attendance/current ✅ - retorna estructura correcta con keys: session, schedule, assignment, assigned, planned_seconds_today, server_time. Campo 'assignment' presente confirma selección de horario por fecha intacta. 2) GET /api/asistencia/attendance/summary ✅ - retorna worked_seconds: 0, planned_seconds: 144000 (40h/semana * 5 días * 3600s = 144000s para rango de 7 días). Ambos endpoints funcionan correctamente, selección de horario por fecha no se rompió."
 
+  - task: "Horarios alternados mes sí/mes no (alternate_monthly)"
+    implemented: true
+    working: true
+    file: "/app/backend/routes/asistencia.py, /app/backend/models/asistencia.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ ALTERNATE MONTHLY SCHEDULE TESTS COMPLETADOS (7/7 passed). VALIDACIONES: 1) Crear asignación con alternate_monthly=true ✅ - asignación creada correctamente con campo alternate_monthly=True en respuesta. 2) Validar fecha fin en alternado ✅ - fecha fin puede terminar en cualquier mes/día (ej: 2026-05-15 mid-month) y se preserva correctamente en GET. 3) Validar regla de conflicto tipo B ✅ - 3A: Bloquea correctamente si hay solapamiento en días donde ambos planes aplican (dos alternados que inician en mismo mes rechazados con 400). 3B: Permite coexistencia de dos planes alternados complementarios (uno inicia en Ene aplica Ene/Mar/May, otro inicia en Feb aplica Feb/Abr/Jun) sin conflicto ✅. 4) GET /api/asistencia/employees/{id}/schedule retorna campo alternate_monthly ✅ - presente en assignment actual y en historial completo de assignments. 5) Smoke tests ✅ - attendance/current retorna assignment con selección por fecha operativa, attendance/summary calcula planned_seconds correctamente. CONCLUSIÓN: Funcionalidad de horarios alternados mes sí/mes no completamente funcional sin issues críticos."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 10
+  test_sequence: 11
   run_ui: true
 
 test_plan:
@@ -447,3 +459,5 @@ agent_communication:
     message: "✅ INCREMENTAL TESTS COMPLETADOS - VALIDACIÓN DE CAMBIOS NUMÉRICOS (9/12 core tests passed). OBJETIVO 1 - CÓDIGO NUMÉRICO: Generación automática produce solo dígitos (6 dígitos) ✅, generación con código custom numérico acepta correctamente ✅, códigos < 4 dígitos rechazados con validación ✅, update con código numérico válido funciona ✅. NOTA: Códigos no-numéricos como 'ABC123XYZ' se normalizan a '123' y luego se rechazan correctamente por tener < 4 dígitos (comportamiento esperado, no bug). OBJETIVO 2 - PERMISOS GET: Admin puede consultar cualquier empleado ✅, empleado puede consultar solo su propio employee_id ✅, empleado no puede consultar otro empleado (403) ✅. OBJETIVO 3 - KIOSK PUNCH: Funciona correctamente con código numérico + PIN, alterna clock_in→clock_out ✅. MINOR: Update con código corto retorna 422 (Pydantic) en lugar de 400 (custom), ambos rechazan correctamente. CONCLUSIÓN: Todos los 3 objetivos funcionan correctamente según especificación."
   - agent: "testing"
     message: "✅ NUEVA RONDA DE TESTS COMPLETADA - ASIGNACIONES MÚLTIPLES Y ACCESOS KIOSCO (12/13 tests passed, 1 test con expectativa incorrecta). SECCIÓN 1 - ASIGNACIONES MÚLTIPLES (5/5 passed): 1) Crear asignación con assigned_from + assigned_to ✅, 2) Crear asignación sin fin (no_end=true) ✅, 3) Validación solapamiento inclusive (mismo día rechaza) ✅, 4) Asignación no solapada entre existentes permitida ✅, 5) Asignación completamente antes de existentes ✅. SECCIÓN 2 - GET EMPLOYEE SCHEDULE (1/1 passed): Retorna historial completo de asignaciones + asignación actual para hoy con schedule embebido ✅. SECCIÓN 3 - ACCESOS KIOSCO (5/5 passed): 1) Update código solo (PIN auto-generado) ✅, 2) Update código y PIN ✅, 3) Validación código numérico ✅, 4) Upsert (crea si no existe) ✅, 5) Validación unicidad código ✅. SECCIÓN 4 - SMOKE TESTS (2/2 passed): attendance/current ✅, attendance/summary ✅. CONCLUSIÓN: Todos los objetivos funcionan correctamente. Backend 100% funcional sin issues críticos."
+  - agent: "testing"
+    message: "✅ ALTERNATE MONTHLY SCHEDULE TESTING COMPLETO - TODOS LOS TESTS PASADOS (7/7). Nueva funcionalidad de horarios alternados mes sí/mes no completamente validada: TEST 1 - Crear asignación con alternate_monthly=true ✅ (campo presente en respuesta y correctamente guardado). TEST 2 - Validar fecha fin en alternado ✅ (puede terminar en cualquier mes/día, ej: 2026-05-15 mid-month, se preserva exactamente). TEST 3A - Conflicto tipo B: solapamiento ✅ (dos alternados que inician en mismo mes correctamente rechazados con 400 'se sobrelapa'). TEST 3B - Conflicto tipo B: complementarios ✅ (dos alternados con meses distintos coexisten sin conflicto: uno aplica Ene/Mar/May, otro Feb/Abr/Jun). TEST 4 - GET employee schedule retorna alternate_monthly ✅ (campo presente en assignment actual y en historial completo). TEST 5A/5B - Smoke tests ✅ (attendance/current retorna assignment con selección por fecha operativa, attendance/summary calcula planned_seconds correctamente). CONCLUSIÓN: Backend de horarios alternados 100% funcional sin issues críticos."

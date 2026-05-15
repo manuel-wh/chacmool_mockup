@@ -140,7 +140,36 @@ def _assignment_active_on(assignment: dict, day: date) -> bool:
     end = _to_end_date(assigned_to, no_end)
     return start <= day <= end
 
-    return "".join(secrets.choice(string.digits) for _ in range(4))
+
+def _assignment_applies_on(assignment: dict, day: date) -> bool:
+    if not _assignment_active_on(assignment, day):
+        return False
+
+    if not bool(assignment.get("alternate_monthly")):
+        return True
+
+    start = _parse_iso_date(assignment.get("assigned_from"))
+    months_diff = (day.year - start.year) * 12 + (day.month - start.month)
+    return months_diff % 2 == 0
+
+
+def _assignments_have_applicable_overlap(a: dict, b: dict) -> bool:
+    a_start = _parse_iso_date(a.get("assigned_from"))
+    b_start = _parse_iso_date(b.get("assigned_from"))
+    a_end = _to_end_date(a.get("assigned_to"), bool(a.get("no_end")))
+    b_end = _to_end_date(b.get("assigned_to"), bool(b.get("no_end")))
+
+    if not _ranges_overlap(a_start, a_end, b_start, b_end):
+        return False
+
+    start = max(a_start, b_start)
+    end = min(a_end, b_end)
+    cur = start
+    while cur <= end:
+        if _assignment_applies_on(a, cur) and _assignment_applies_on(b, cur):
+            return True
+        cur += timedelta(days=1)
+    return False
 
 
 async def _get_devices_config_doc() -> dict:
@@ -288,7 +317,7 @@ async def _get_assignments_for_employee(employee_id: str) -> List[dict]:
 
 
 def _pick_assignment_for_date(assignments: List[dict], day: date) -> Optional[dict]:
-    active = [a for a in assignments if _assignment_active_on(a, day)]
+    active = [a for a in assignments if _assignment_applies_on(a, day)]
     if not active:
         return None
     active.sort(key=lambda a: a.get("assigned_from", ""), reverse=True)
@@ -372,10 +401,14 @@ async def assign_schedule(
         raise HTTPException(400, "La fecha fin no puede ser menor a la fecha inicio.")
 
     existing = await _get_assignments_for_employee(employee_id)
+    candidate = {
+        "assigned_from": data.assigned_from,
+        "assigned_to": None if no_end else data.assigned_to,
+        "no_end": no_end,
+        "alternate_monthly": bool(data.alternate_monthly),
+    }
     for ex in existing:
-        ex_start = _parse_iso_date(ex.get("assigned_from"))
-        ex_end = _to_end_date(ex.get("assigned_to"), bool(ex.get("no_end")))
-        if _ranges_overlap(start, end, ex_start, ex_end):
+        if _assignments_have_applicable_overlap(candidate, ex):
             ex_to = ex.get("assigned_to") or "sin fin"
             raise HTTPException(
                 400,
@@ -390,6 +423,7 @@ async def assign_schedule(
         "assigned_from": data.assigned_from,
         "assigned_to": None if no_end else data.assigned_to,
         "no_end": no_end,
+        "alternate_monthly": bool(data.alternate_monthly),
         "assigned_at": _now_iso(),
     }
     await db.employee_schedules.insert_one(dict(doc))

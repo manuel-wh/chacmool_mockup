@@ -784,6 +784,11 @@ const EmployeeProfile = () => {
         .filter((a) => {
           if (iso < a.assigned_from) return false;
           if (!a.no_end && a.assigned_to && iso > a.assigned_to) return false;
+          if (a.alternate_monthly) {
+            const start = new Date(`${a.assigned_from}T00:00:00`);
+            const monthsDiff = ((day.getFullYear() - start.getFullYear()) * 12) + (day.getMonth() - start.getMonth());
+            if (monthsDiff % 2 !== 0) return false;
+          }
           return true;
         })
         .sort((a, b) => String(b.assigned_from).localeCompare(String(a.assigned_from)))[0];
@@ -812,6 +817,8 @@ const EmployeeProfile = () => {
         left,
         width,
         color: r.status === 'closed' ? 'bg-blue-500' : 'bg-emerald-500',
+        startLabel: inDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+        endLabel: outDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
       };
     }).filter(Boolean);
 
@@ -874,7 +881,7 @@ const EmployeeProfile = () => {
                   <div className="grid grid-cols-[220px_200px_1fr] px-6 py-4 border-b border-slate-200 text-sm font-medium text-slate-700">
                     <div>Fecha</div>
                     <div>Horas</div>
-                    <div className="grid grid-cols-24 gap-0 text-xs text-slate-400">
+                    <div className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-0 text-xs text-slate-400">
                       {Array.from({ length: 24 }, (_, h) => <div key={h} className="text-center">{h}:00</div>)}
                     </div>
                   </div>
@@ -890,7 +897,7 @@ const EmployeeProfile = () => {
                         <div className="text-slate-800 font-medium">{formatHours(worked)} / <span className="text-slate-500">{formatHours(planned)}</span></div>
                         <div className="relative h-5 bg-slate-100 rounded-full">
                           {segs.map((s) => (
-                            <div key={s.id} className={`absolute top-0 h-5 rounded-full ${s.color}`} style={{ left: `${s.left}%`, width: `${s.width}%` }} />
+                            <div key={s.id} className={`absolute top-0 h-5 rounded-full ${s.color} hover:opacity-85`} style={{ left: `${s.left}%`, width: `${s.width}%` }} title={`${s.startLabel} - ${s.endLabel}`} />
                           ))}
                         </div>
                       </div>
@@ -912,7 +919,7 @@ const EmployeeProfile = () => {
                     return (
                       <div key={iso} className="border border-slate-200 rounded-xl h-[320px] relative bg-slate-50 overflow-hidden">
                         {segs.map((s) => (
-                          <div key={s.id} className={`absolute left-2 right-2 rounded-md ${s.color}`} style={{ top: `${s.top}%`, height: `${Math.max(2, s.height)}%` }} />
+                          <div key={s.id} className={`absolute left-2 right-2 rounded-md ${s.color} hover:opacity-85`} style={{ top: `${s.top}%`, height: `${Math.max(2, s.height)}%` }} title={`${s.startLabel} - ${s.endLabel}`} />
                         ))}
                       </div>
                     );

@@ -167,8 +167,11 @@ const AssignmentsList = ({ assignments, isAdmin, employeeId, onChanged }) => {
             <div key={a.id} className="border border-slate-100 rounded-xl p-3 flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-medium text-slate-900">{a.schedule_name}</div>
-                <div className="text-xs text-slate-500">
-                  {a.assigned_from} → {a.no_end ? 'Sin fin' : (a.assigned_to || 'Sin fin')}
+                <div className="text-xs text-slate-500 flex items-center gap-2">
+                  <span>{a.assigned_from} → {a.no_end ? 'Sin fin' : (a.assigned_to || 'Sin fin')}</span>
+                  {a.alternate_monthly && (
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Mes sí / mes no</span>
+                  )}
                 </div>
               </div>
               {isAdmin && (
@@ -215,6 +218,12 @@ const CalendarMonth = ({ anchor, assignments }) => {
       if (!from) return false;
       if (iso < from) return false;
       if (to && iso > to) return false;
+
+      if (a.alternate_monthly) {
+        const start = new Date(`${from}T00:00:00`);
+        const monthsDiff = ((d.getFullYear() - start.getFullYear()) * 12) + (d.getMonth() - start.getMonth());
+        if (monthsDiff % 2 !== 0) return false;
+      }
       return true;
     });
     if (found.length === 0) return null;
@@ -274,6 +283,7 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
   const [assignedFrom, setAssignedFrom] = useState(toISODate(new Date()));
   const [assignedTo, setAssignedTo] = useState('');
   const [noEnd, setNoEnd] = useState(false);
+  const [alternateMonthly, setAlternateMonthly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -293,7 +303,7 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
     }
     setBusy(true);
     try {
-      await asistenciaAPI.assignSchedule(employeeId, picked, assignedFrom, noEnd ? null : assignedTo, noEnd);
+      await asistenciaAPI.assignSchedule(employeeId, picked, assignedFrom, noEnd ? null : assignedTo, noEnd, alternateMonthly);
       onSaved();
     } catch (e) {
       setErr(e.message === 'HTTP 400' ? 'Este horario se sobrelapa con una asignación existente o tiene fechas inválidas.' : e.message);
@@ -363,6 +373,23 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50"
               data-testid="assign-to"
             />
+          </div>
+
+          <div className="border border-slate-200 rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-medium text-slate-700">Modo alternado</label>
+                <p className="text-[11px] text-slate-500 mt-1">Aplica un mes sí y un mes no (desde el mes de inicio).</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAlternateMonthly((v) => !v)}
+                className={`w-10 h-6 rounded-full transition ${alternateMonthly ? 'bg-indigo-500' : 'bg-slate-200'}`}
+                data-testid="assign-alternate-monthly"
+              >
+                <span className={`block w-4 h-4 bg-white rounded-full transform transition ${alternateMonthly ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+            </div>
           </div>
         </div>
         <div className="border-t border-slate-200 px-6 py-4 flex gap-2 justify-end">

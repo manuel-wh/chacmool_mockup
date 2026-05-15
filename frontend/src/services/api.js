@@ -566,7 +566,7 @@ export const asistenciaAPI = {
 
   // Employee schedule
   getEmployeeSchedule: (employeeId) => _req(`/api/asistencia/employees/${employeeId}/schedule`),
-  assignSchedule: (employeeId, scheduleId, assignedFrom, assignedTo = null, noEnd = false) => _req(
+  assignSchedule: (employeeId, scheduleId, assignedFrom, assignedTo = null, noEnd = false, alternateMonthly = false) => _req(
     `/api/asistencia/employees/${employeeId}/schedule`,
     {
       method: 'POST',
@@ -575,6 +575,7 @@ export const asistenciaAPI = {
         assigned_from: assignedFrom,
         assigned_to: assignedTo,
         no_end: noEnd,
+        alternate_monthly: alternateMonthly,
       }),
     }
   ),
