@@ -425,10 +425,58 @@ backend:
         agent: "testing"
         comment: "✅ ALTERNATE MONTHLY SCHEDULE TESTS COMPLETADOS (7/7 passed). VALIDACIONES: 1) Crear asignación con alternate_monthly=true ✅ - asignación creada correctamente con campo alternate_monthly=True en respuesta. 2) Validar fecha fin en alternado ✅ - fecha fin puede terminar en cualquier mes/día (ej: 2026-05-15 mid-month) y se preserva correctamente en GET. 3) Validar regla de conflicto tipo B ✅ - 3A: Bloquea correctamente si hay solapamiento en días donde ambos planes aplican (dos alternados que inician en mismo mes rechazados con 400). 3B: Permite coexistencia de dos planes alternados complementarios (uno inicia en Ene aplica Ene/Mar/May, otro inicia en Feb aplica Feb/Abr/Jun) sin conflicto ✅. 4) GET /api/asistencia/employees/{id}/schedule retorna campo alternate_monthly ✅ - presente en assignment actual y en historial completo de assignments. 5) Smoke tests ✅ - attendance/current retorna assignment con selección por fecha operativa, attendance/summary calcula planned_seconds correctamente. CONCLUSIÓN: Funcionalidad de horarios alternados mes sí/mes no completamente funcional sin issues críticos."
 
+  - task: "Editar asignaciones normales e intermitentes"
+    implemented: true
+    working: true
+    file: "/app/backend/routes/asistencia.py, /app/backend/models/asistencia.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ EDICIÓN DE ASIGNACIONES COMPLETAMENTE FUNCIONAL (2/2 tests passed). OBJETIVO 1.1 - ASIGNACIONES NORMALES: Permite editar fecha inicio ✅, permite editar fecha fin ✅, permite cambiar a no_end=true ✅. Todas las ediciones se aplican correctamente. OBJETIVO 1.2 - ASIGNACIONES INTERMITENTES (alternate_monthly=true): Bloquea correctamente cambio de fecha inicio con error 400 'Las asignaciones intermitentes solo permiten editar fecha fin' ✅, permite editar fecha fin exitosamente ✅, bloquea correctamente no_end=true con error 400 'Las asignaciones intermitentes deben tener fecha fin definida' ✅. Endpoint PUT /api/asistencia/employees/{employee_id}/schedule/{assignment_id} funciona según especificación para ambos tipos de asignaciones."
+
+  - task: "Repetir mismo horario en distintas fechas"
+    implemented: true
+    working: true
+    file: "/app/backend/routes/asistencia.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ REPETICIÓN DE HORARIOS COMPLETAMENTE FUNCIONAL (1/1 test passed). Validado: Creación de 3 asignaciones con mismo schedule_id en periodos no conflictivos ✅ (días 10-20, 25-35, 40-50). Todas las asignaciones creadas exitosamente con mismo schedule_id. GET /api/asistencia/employees/{employee_id}/schedule retorna historial completo con las 3 asignaciones, todas con mismo schedule_id. Sistema permite múltiples asignaciones del mismo horario en fechas distintas sin conflicto."
+
+  - task: "Planes de vacaciones y bloqueo de asignaciones"
+    implemented: true
+    working: true
+    file: "/app/backend/routes/asistencia.py, /app/backend/models/asistencia.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VACACIONES COMPLETAMENTE FUNCIONALES (2/2 tests passed). OBJETIVO 3.1 - CREAR Y LISTAR VACACIONES: POST /api/asistencia/employees/{employee_id}/vacations crea planes de vacaciones correctamente ✅, GET /api/asistencia/employees/{employee_id}/vacations lista todas las vacaciones del empleado ✅. Creadas 2 vacaciones y listadas exitosamente. OBJETIVO 3.2 - BLOQUEO DE ASIGNACIONES: Creación de asignación que solapa con vacaciones correctamente bloqueada con error 400 'No se puede asignar: el rango coincide con días de vacaciones' ✅, creación de asignación sin solapamiento permitida ✅, edición de asignación para solapar con vacaciones correctamente bloqueada con error 400 'No se puede guardar: el rango coincide con días de vacaciones' ✅. Sistema valida correctamente conflictos con días de vacaciones según días aplicables del horario."
+
+  - task: "Summary/current excluye días de vacaciones de planned_seconds"
+    implemented: true
+    working: true
+    file: "/app/backend/routes/asistencia.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ EXCLUSIÓN DE VACACIONES EN SUMMARY COMPLETAMENTE FUNCIONAL (1/1 test passed). Validado: 1) Asignación de 14 días (10 weekdays) sin vacaciones: planned_seconds = 288000 (10 días * 8 horas * 3600s) ✅. 2) Creación de vacaciones de 3 días en medio del periodo ✅. 3) GET /api/asistencia/attendance/summary con vacaciones: planned_seconds = 259200 (9 días * 8 horas * 3600s) ✅. Diferencia: 28800 segundos (8 horas = 1 día laboral excluido). Sistema correctamente excluye días de vacaciones del cálculo de planned_seconds en el endpoint de summary. Lógica implementada en líneas 770-772: itera por cada día del rango y salta días que caen en vacaciones antes de sumar planned_seconds."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 11
+  test_sequence: 12
   run_ui: true
 
 test_plan:
@@ -461,3 +509,5 @@ agent_communication:
     message: "✅ NUEVA RONDA DE TESTS COMPLETADA - ASIGNACIONES MÚLTIPLES Y ACCESOS KIOSCO (12/13 tests passed, 1 test con expectativa incorrecta). SECCIÓN 1 - ASIGNACIONES MÚLTIPLES (5/5 passed): 1) Crear asignación con assigned_from + assigned_to ✅, 2) Crear asignación sin fin (no_end=true) ✅, 3) Validación solapamiento inclusive (mismo día rechaza) ✅, 4) Asignación no solapada entre existentes permitida ✅, 5) Asignación completamente antes de existentes ✅. SECCIÓN 2 - GET EMPLOYEE SCHEDULE (1/1 passed): Retorna historial completo de asignaciones + asignación actual para hoy con schedule embebido ✅. SECCIÓN 3 - ACCESOS KIOSCO (5/5 passed): 1) Update código solo (PIN auto-generado) ✅, 2) Update código y PIN ✅, 3) Validación código numérico ✅, 4) Upsert (crea si no existe) ✅, 5) Validación unicidad código ✅. SECCIÓN 4 - SMOKE TESTS (2/2 passed): attendance/current ✅, attendance/summary ✅. CONCLUSIÓN: Todos los objetivos funcionan correctamente. Backend 100% funcional sin issues críticos."
   - agent: "testing"
     message: "✅ ALTERNATE MONTHLY SCHEDULE TESTING COMPLETO - TODOS LOS TESTS PASADOS (7/7). Nueva funcionalidad de horarios alternados mes sí/mes no completamente validada: TEST 1 - Crear asignación con alternate_monthly=true ✅ (campo presente en respuesta y correctamente guardado). TEST 2 - Validar fecha fin en alternado ✅ (puede terminar en cualquier mes/día, ej: 2026-05-15 mid-month, se preserva exactamente). TEST 3A - Conflicto tipo B: solapamiento ✅ (dos alternados que inician en mismo mes correctamente rechazados con 400 'se sobrelapa'). TEST 3B - Conflicto tipo B: complementarios ✅ (dos alternados con meses distintos coexisten sin conflicto: uno aplica Ene/Mar/May, otro Feb/Abr/Jun). TEST 4 - GET employee schedule retorna alternate_monthly ✅ (campo presente en assignment actual y en historial completo). TEST 5A/5B - Smoke tests ✅ (attendance/current retorna assignment con selección por fecha operativa, attendance/summary calcula planned_seconds correctamente). CONCLUSIÓN: Backend de horarios alternados 100% funcional sin issues críticos."
+  - agent: "testing"
+    message: "✅ NUEVA RONDA DE TESTS COMPLETADA - TODAS LAS FUNCIONALIDADES PASADAS (6/6 tests passed). Ejecutados tests exhaustivos de nuevas features solicitadas: OBJETIVO 1 - EDITAR ASIGNACIONES (2/2 passed): 1.1) Asignaciones normales permiten editar fecha inicio, fecha fin y no_end ✅. 1.2) Asignaciones intermitentes (alternate_monthly) bloquean cambio de fecha inicio y no_end, pero permiten editar fecha fin ✅. OBJETIVO 2 - REPETIR MISMO HORARIO (1/1 passed): Múltiples asignaciones con mismo schedule_id en periodos no conflictivos funcionan correctamente ✅. OBJETIVO 3 - VACACIONES (2/2 passed): 3.1) Crear y listar planes de vacaciones funciona ✅. 3.2) Bloqueo de creación/edición de asignaciones que caen en días de vacaciones funciona correctamente ✅. OBJETIVO 4 - SUMMARY CON EXCLUSIÓN DE VACACIONES (1/1 passed): planned_seconds en attendance/summary correctamente excluye días de vacaciones ✅. CONCLUSIÓN: Todas las 4 funcionalidades solicitadas están 100% funcionales sin issues críticos. Backend listo para uso."

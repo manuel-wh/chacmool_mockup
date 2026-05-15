@@ -579,12 +579,27 @@ export const asistenciaAPI = {
       }),
     }
   ),
+  updateEmployeeScheduleAssignment: (employeeId, assignmentId, payload) => _req(
+    `/api/asistencia/employees/${employeeId}/schedule/${assignmentId}`,
+    { method: 'PUT', body: JSON.stringify(payload) }
+  ),
   removeEmployeeSchedule: (employeeId, assignmentId = null) => {
     const qs = new URLSearchParams();
     if (assignmentId) qs.set('assignment_id', assignmentId);
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return _req(`/api/asistencia/employees/${employeeId}/schedule${suffix}`, { method: 'DELETE' });
   },
+
+  // Vacation plans
+  getEmployeeVacations: (employeeId) => _req(`/api/asistencia/employees/${employeeId}/vacations`),
+  createEmployeeVacation: (employeeId, startDate, endDate) => _req(
+    `/api/asistencia/employees/${employeeId}/vacations`,
+    { method: 'POST', body: JSON.stringify({ start_date: startDate, end_date: endDate }) }
+  ),
+  deleteEmployeeVacation: (employeeId, vacationId) => _req(
+    `/api/asistencia/employees/${employeeId}/vacations/${vacationId}`,
+    { method: 'DELETE' }
+  ),
 
   // Attendance / fichaje
   current: () => _req('/api/asistencia/attendance/current'),

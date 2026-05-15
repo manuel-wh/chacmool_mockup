@@ -43,10 +43,27 @@ class ScheduleUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[Literal["fijo", "flexible"]] = None
     days: Optional[List[DaySchedule]] = None
+
+class EmployeeScheduleUpdate(BaseModel):
+    assigned_from: Optional[str] = None
+    assigned_to: Optional[str] = None
+    no_end: Optional[bool] = None
+
+
+class VacationPlan(BaseModel):
+    id: str
+    employee_id: str
+    start_date: str
+    end_date: str
+    created_at: str
     template_kind: Optional[Literal["jornada_continua", "jornada_partida"]] = None
 
 
 # ============== ASIGNACIÓN HORARIO A EMPLEADO ==============
+
+class VacationPlanCreate(BaseModel):
+    start_date: str
+    end_date: str
 
 class EmployeeSchedule(BaseModel):
     id: str

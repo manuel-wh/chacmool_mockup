@@ -10,13 +10,15 @@ import { DAY_LABELS, MONTH_LABELS, toISODate, secondsToHM, addDays, startOfWeek,
  * - Botón "Asignar horario" (solo admin)
  */
 const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
-  const [data, setData] = useState({ assigned: false, schedule: null, assignment: null, assignments: [] });
+  const [data, setData] = useState({ assigned: false, schedule: null, assignment: null, assignments: [], vacations: [] });
   const [anchor, setAnchor] = useState(new Date());
   const [summaryMonth, setSummaryMonth] = useState({ worked_seconds: 0, planned_seconds: 0 });
   const [summaryWeek, setSummaryWeek] = useState({ worked_seconds: 0, planned_seconds: 0 });
   const [loading, setLoading] = useState(true);
   const [showAssign, setShowAssign] = useState(false);
 
+  const [editingAssignment, setEditingAssignment] = useState(null);
+  const [showVacationModal, setShowVacationModal] = useState(false);
   const monthRange = useMemo(() => ({
     from: new Date(anchor.getFullYear(), anchor.getMonth(), 1),
     to: new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0),
@@ -59,6 +61,7 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
 
   const schedule = data.schedule;
   const assignments = data.assignments || [];
+  const vacations = data.vacations || [];
 
   return (
     <div className="space-y-6" data-testid="employee-horarios-tab">
@@ -77,13 +80,22 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
         </div>
 
         {isAdmin && (
-          <button
-            onClick={() => setShowAssign(true)}
-            className="bg-slate-900 text-white rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-800 inline-flex items-center gap-2"
-            data-testid="assign-schedule-btn"
-          >
-            Agregar asignación
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowVacationModal(true)}
+              className="px-4 py-2.5 text-sm font-medium rounded-xl border border-slate-200 hover:bg-slate-50"
+              data-testid="add-vacation-btn"
+            >
+              Plan de vacaciones
+            </button>
+            <button
+              onClick={() => setShowAssign(true)}
+              className="bg-slate-900 text-white rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-800 inline-flex items-center gap-2"
+              data-testid="assign-schedule-btn"
+            >
+              Agregar asignación
+            </button>
+          </div>
         )}
       </div>
 
@@ -109,16 +121,40 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
         </div>
       )}
 
-      <AssignmentsList assignments={assignments} isAdmin={isAdmin} employeeId={employeeId} onChanged={fetchAll} />
+      <AssignmentsList
+        assignments={assignments}
+        vacations={vacations}
+        isAdmin={isAdmin}
+        employeeId={employeeId}
+        onChanged={fetchAll}
+        onEdit={(a) => setEditingAssignment(a)}
+      />
 
       {/* Calendario mensual */}
-      <CalendarMonth anchor={anchor} assignments={assignments} />
+      <CalendarMonth anchor={anchor} assignments={assignments} vacations={vacations} />
 
       {showAssign && (
         <AssignModal
           employeeId={employeeId}
           onClose={() => setShowAssign(false)}
           onSaved={() => { setShowAssign(false); fetchAll(); }}
+        />
+      )}
+
+      {editingAssignment && (
+        <EditAssignmentModal
+          employeeId={employeeId}
+          assignment={editingAssignment}
+          onClose={() => setEditingAssignment(null)}
+          onSaved={() => { setEditingAssignment(null); fetchAll(); }}
+        />
+      )}
+
+      {showVacationModal && (
+        <VacationModal
+          employeeId={employeeId}
+          onClose={() => setShowVacationModal(false)}
+          onSaved={() => { setShowVacationModal(false); fetchAll(); }}
         />
       )}
     </div>
@@ -144,7 +180,7 @@ const SummaryCard = ({ title, worked_seconds, planned_seconds, testId }) => {
   );
 };
 
-const AssignmentsList = ({ assignments, isAdmin, employeeId, onChanged }) => {
+const AssignmentsList = ({ assignments, vacations, isAdmin, employeeId, onChanged, onEdit }) => {
   const removeOne = async (assignmentId) => {
     try {
       await asistenciaAPI.removeEmployeeSchedule(employeeId, assignmentId);
@@ -175,22 +211,62 @@ const AssignmentsList = ({ assignments, isAdmin, employeeId, onChanged }) => {
                 </div>
               </div>
               {isAdmin && (
-                <button
-                  onClick={() => removeOne(a.id)}
-                  className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
-                  data-testid={`remove-assignment-${a.id}`}
-                >
-                  Eliminar
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onEdit(a)}
+                    className="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    data-testid={`edit-assignment-${a.id}`}
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => removeOne(a.id)}
+                    className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+                    data-testid={`remove-assignment-${a.id}`}
+                  >
+                    Eliminar
+                  </button>
+                </div>
               )}
             </div>
           ))}
+      </div>
+
+      <div className="mt-4">
+        <h5 className="text-sm font-semibold text-slate-800 mb-2">Vacaciones</h5>
+        {(!vacations || vacations.length === 0) ? (
+          <div className="text-xs text-slate-500">Sin planes de vacaciones.</div>
+        ) : (
+          <div className="space-y-2">
+            {vacations.map((v) => (
+              <div key={v.id} className="border border-rose-200 bg-rose-50 rounded-xl p-3 flex items-center justify-between">
+                <div className="text-sm text-rose-800 font-medium">Vacaciones: {v.start_date} → {v.end_date}</div>
+                {isAdmin && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await asistenciaAPI.deleteEmployeeVacation(employeeId, v.id);
+                        onChanged();
+                      } catch (e) {
+                        alert(e.message);
+                      }
+                    }}
+                    className="text-xs px-2 py-1 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-100"
+                    data-testid={`remove-vacation-${v.id}`}
+                  >
+                    Eliminar
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-const CalendarMonth = ({ anchor, assignments }) => {
+const CalendarMonth = ({ anchor, assignments, vacations }) => {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   const firstDay = new Date(year, month, 1);
@@ -231,7 +307,17 @@ const CalendarMonth = ({ anchor, assignments }) => {
     return found[0];
   };
 
+  const vacationForDate = (d) => {
+    const iso = toISODate(d);
+    return (vacations || []).find((v) => iso >= v.start_date && iso <= v.end_date) || null;
+  };
+
   const dayInfo = (d) => {
+    const vacation = vacationForDate(d);
+    if (vacation) {
+      return { isVacation: true, label: 'Vacaciones', range: `${vacation.start_date} → ${vacation.end_date}` };
+    }
+
     const assign = assignmentForDate(d);
     const schedule = assign?.schedule;
     if (!schedule) return null;
@@ -264,9 +350,9 @@ const CalendarMonth = ({ anchor, assignments }) => {
                 {d.getDate()}
               </div>
               {info && (
-                <div className="mt-1 text-xs">
-                  <div className="font-medium text-slate-800 truncate">{info.label}</div>
-                  <div className="text-slate-500">{info.range}</div>
+                <div className={`mt-1 text-xs rounded-lg px-2 py-1 ${info.isVacation ? 'bg-rose-50 border border-rose-200' : ''}`}>
+                  <div className={`font-medium truncate ${info.isVacation ? 'text-rose-700' : 'text-slate-800'}`}>{info.label}</div>
+                  <div className={info.isVacation ? 'text-rose-500' : 'text-slate-500'}>{info.range}</div>
                 </div>
               )}
             </div>
@@ -407,5 +493,131 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
     </div>
   );
 };
+
+const EditAssignmentModal = ({ employeeId, assignment, onClose, onSaved }) => {
+  const [assignedFrom, setAssignedFrom] = useState(assignment.assigned_from || '');
+  const [assignedTo, setAssignedTo] = useState(assignment.assigned_to || '');
+  const [noEnd, setNoEnd] = useState(Boolean(assignment.no_end));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const isAlternated = Boolean(assignment.alternate_monthly);
+
+  const save = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      const payload = isAlternated
+        ? { assigned_to: assignedTo }
+        : { assigned_from: assignedFrom, assigned_to: noEnd ? null : assignedTo, no_end: noEnd };
+      await asistenciaAPI.updateEmployeeScheduleAssignment(employeeId, assignment.id, payload);
+      onSaved();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="edit-assignment-modal">
+      <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-slate-900" style={{ fontFamily: 'Outfit' }}>Editar asignación</h3>
+          <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
+        </div>
+        <div className="p-6 space-y-3">
+          {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</div>}
+          <div className="text-sm text-slate-700">Horario: <strong>{assignment.schedule_name}</strong></div>
+
+          {!isAlternated && (
+            <div className="border border-slate-200 rounded-xl p-3">
+              <label className="block text-xs font-medium text-slate-700 mb-1">Fecha de inicio</label>
+              <input type="date" value={assignedFrom} onChange={(e) => setAssignedFrom(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          )}
+
+          {isAlternated ? (
+            <div className="border border-indigo-200 bg-indigo-50 rounded-xl p-3 text-sm text-indigo-800">
+              Asignación intermitente: solo puedes editar la fecha fin.
+            </div>
+          ) : (
+            <div className="border border-slate-200 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium text-slate-700">Sin fecha fin</label>
+                <button type="button" onClick={() => setNoEnd((v) => !v)} className={`w-10 h-6 rounded-full transition ${noEnd ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                  <span className={`block w-4 h-4 bg-white rounded-full transform transition ${noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <input type="date" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} disabled={noEnd} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50" />
+            </div>
+          )}
+
+          {isAlternated && (
+            <div className="border border-slate-200 rounded-xl p-3">
+              <label className="block text-xs font-medium text-slate-700 mb-1">Fecha de fin</label>
+              <input type="date" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          )}
+        </div>
+        <div className="border-t border-slate-200 px-6 py-4 flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-xl hover:bg-slate-50">Cancelar</button>
+          <button onClick={save} disabled={busy} className="px-4 py-2 text-sm bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50">
+            {busy ? 'Guardando…' : 'Guardar cambios'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const VacationModal = ({ employeeId, onClose, onSaved }) => {
+  const [startDate, setStartDate] = useState(toISODate(new Date()));
+  const [endDate, setEndDate] = useState(toISODate(new Date()));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const save = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      await asistenciaAPI.createEmployeeVacation(employeeId, startDate, endDate);
+      onSaved();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="vacation-modal">
+      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-slate-900" style={{ fontFamily: 'Outfit' }}>Plan de vacaciones</h3>
+          <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
+        </div>
+        <div className="p-6 space-y-3">
+          {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</div>}
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Fecha inicio</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Fecha fin</label>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div className="border-t border-slate-200 px-6 py-4 flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-xl hover:bg-slate-50">Cancelar</button>
+          <button onClick={save} disabled={busy} className="px-4 py-2 text-sm bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50">
+            {busy ? 'Guardando…' : 'Guardar vacaciones'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 export default EmployeeHorariosTab;

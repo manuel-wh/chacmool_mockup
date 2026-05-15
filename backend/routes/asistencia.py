@@ -14,7 +14,7 @@ import string
 
 from models.asistencia import (
     Schedule, ScheduleCreate, ScheduleUpdate,
-    EmployeeSchedule, EmployeeScheduleAssign,
+    EmployeeSchedule, EmployeeScheduleAssign, EmployeeScheduleUpdate, VacationPlan, VacationPlanCreate,
     AttendanceSession,
     DevicesConfig, DevicesConfigUpdate,
     KioskAccessCredential, KioskAccessCreateRequest, KioskAccessUpdateRequest,
@@ -188,8 +188,13 @@ async def _get_devices_config_doc() -> dict:
 
 
 async def _clock_in_employee(employee_id: str, employee_name: Optional[str], device: str = "panel_web") -> dict:
+    vacations = await _get_vacations_for_employee(employee_id)
+    today = date.today()
+    if any(_vacation_active_on(v, today) for v in vacations):
+        raise HTTPException(400, "No se puede fichar: el empleado está de vacaciones en esta fecha.")
+
     assignments = await _get_assignments_for_employee(employee_id)
-    assignment = _pick_assignment_for_date(assignments, date.today())
+    assignment = _pick_assignment_for_date(assignments, today)
     if not assignment:
         raise HTTPException(400, "No tienes un horario asignado para hoy. Contacta al administrador.")
 
@@ -311,6 +316,36 @@ async def update_schedule(
     return updated
 
 
+async def _get_vacations_for_employee(employee_id: str) -> List[dict]:
+    return await db.vacation_plans.find({"employee_id": employee_id}, {"_id": 0}).sort("start_date", 1).to_list(2000)
+
+
+def _vacation_active_on(vacation: dict, day: date) -> bool:
+    try:
+        start = _parse_iso_date(vacation.get("start_date"))
+        end = _parse_iso_date(vacation.get("end_date"))
+    except Exception:
+        return False
+    return start <= day <= end
+
+
+def _assignment_conflicts_with_vacations(assignment: dict, vacations: List[dict]) -> bool:
+    start = _parse_iso_date(assignment.get("assigned_from"))
+    end = _to_end_date(assignment.get("assigned_to"), bool(assignment.get("no_end")))
+
+    for vac in vacations:
+        vac_start = _parse_iso_date(vac.get("start_date"))
+        vac_end = _parse_iso_date(vac.get("end_date"))
+        if not _ranges_overlap(start, end, vac_start, vac_end):
+            continue
+        cur = max(start, vac_start)
+        last = min(end, vac_end)
+        while cur <= last:
+            if _assignment_applies_on(assignment, cur):
+                return True
+            cur += timedelta(days=1)
+    return False
+
 
 async def _get_assignments_for_employee(employee_id: str) -> List[dict]:
     return await db.employee_schedules.find({"employee_id": employee_id}, {"_id": 0}).sort("assigned_from", 1).to_list(2000)
@@ -345,8 +380,9 @@ async def get_employee_schedule(
 ):
     """Retorna asignación activa de hoy + historial de asignaciones del empleado."""
     assignments = await _get_assignments_for_employee(employee_id)
+    vacations = await _get_vacations_for_employee(employee_id)
     if not assignments:
-        return {"assigned": False, "schedule": None, "assignment": None, "assignments": []}
+        return {"assigned": False, "schedule": None, "assignment": None, "assignments": [], "vacations": vacations}
 
     schedule_ids = list({a.get("schedule_id") for a in assignments if a.get("schedule_id")})
     schedules = await db.schedules.find({"id": {"$in": schedule_ids}}, {"_id": 0}).to_list(1000)
@@ -367,6 +403,7 @@ async def get_employee_schedule(
         "schedule": current_schedule,
         "assignment": current_assignment,
         "assignments": enriched,
+        "vacations": vacations,
     }
 
 
@@ -410,10 +447,11 @@ async def assign_schedule(
     for ex in existing:
         if _assignments_have_applicable_overlap(candidate, ex):
             ex_to = ex.get("assigned_to") or "sin fin"
-            raise HTTPException(
-                400,
-                f"Este horario se sobrelapa con otra asignación ({ex.get('assigned_from')} → {ex_to}).",
-            )
+            raise HTTPException(400, f"Este horario se sobrelapa con otra asignación ({ex.get('assigned_from')} → {ex_to}).")
+
+    vacations = await _get_vacations_for_employee(employee_id)
+    if _assignment_conflicts_with_vacations(candidate, vacations):
+        raise HTTPException(400, "No se puede asignar: el rango coincide con días de vacaciones.")
 
     doc = {
         "id": str(uuid4()),
@@ -431,6 +469,78 @@ async def assign_schedule(
     return {"assigned": True, "assignment": doc, "schedule": schedule}
 
 
+@router.put("/employees/{employee_id}/schedule/{assignment_id}")
+async def update_employee_schedule_assignment(
+    employee_id: str,
+    assignment_id: str,
+    data: EmployeeScheduleUpdate,
+    current_user: dict = Depends(require_admin),
+):
+    existing = await db.employee_schedules.find_one({"id": assignment_id, "employee_id": employee_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Assignment not found")
+
+    current_no_end = bool(existing.get("no_end"))
+    next_assigned_from = data.assigned_from or existing.get("assigned_from")
+    next_no_end = current_no_end if data.no_end is None else bool(data.no_end)
+    next_assigned_to = existing.get("assigned_to")
+
+    if existing.get("alternate_monthly"):
+        if data.assigned_from and data.assigned_from != existing.get("assigned_from"):
+            raise HTTPException(400, "Las asignaciones intermitentes solo permiten editar fecha fin.")
+        if data.no_end is True:
+            raise HTTPException(400, "Las asignaciones intermitentes deben tener fecha fin definida.")
+        if data.assigned_to:
+            next_assigned_to = data.assigned_to
+    else:
+        if data.assigned_to is not None:
+            next_assigned_to = data.assigned_to
+
+    if not next_no_end and not next_assigned_to:
+        raise HTTPException(400, "Debes indicar fecha fin o activar sin fecha fin.")
+
+    try:
+        start = _parse_iso_date(next_assigned_from)
+        end = _to_end_date(next_assigned_to, next_no_end)
+    except Exception:
+        raise HTTPException(400, "Fechas inválidas en la edición de asignación.")
+
+    if end < start:
+        raise HTTPException(400, "La fecha fin no puede ser menor a la fecha inicio.")
+
+    candidate = {
+        "id": assignment_id,
+        "employee_id": employee_id,
+        "schedule_id": existing.get("schedule_id"),
+        "schedule_name": existing.get("schedule_name"),
+        "assigned_from": next_assigned_from,
+        "assigned_to": None if next_no_end else next_assigned_to,
+        "no_end": next_no_end,
+        "alternate_monthly": bool(existing.get("alternate_monthly")),
+    }
+
+    others = await db.employee_schedules.find({"employee_id": employee_id, "id": {"$ne": assignment_id}}, {"_id": 0}).to_list(2000)
+    for other in others:
+        if _assignments_have_applicable_overlap(candidate, other):
+            other_to = other.get("assigned_to") or "sin fin"
+            raise HTTPException(400, f"Se solapa con otra asignación ({other.get('assigned_from')} → {other_to}).")
+
+    vacations = await _get_vacations_for_employee(employee_id)
+    if _assignment_conflicts_with_vacations(candidate, vacations):
+        raise HTTPException(400, "No se puede guardar: el rango coincide con días de vacaciones.")
+
+    await db.employee_schedules.update_one(
+        {"id": assignment_id, "employee_id": employee_id},
+        {"$set": {
+            "assigned_from": candidate["assigned_from"],
+            "assigned_to": candidate["assigned_to"],
+            "no_end": candidate["no_end"],
+        }},
+    )
+    updated = await db.employee_schedules.find_one({"id": assignment_id, "employee_id": employee_id}, {"_id": 0})
+    return {"updated": True, "assignment": updated}
+
+
 @router.delete("/employees/{employee_id}/schedule")
 async def remove_employee_schedule(
     employee_id: str,
@@ -440,8 +550,54 @@ async def remove_employee_schedule(
     query = {"employee_id": employee_id}
     if assignment_id:
         query["id"] = assignment_id
-
     res = await db.employee_schedules.delete_many(query)
+    return {"removed": True, "deleted_count": res.deleted_count}
+
+
+@router.get("/employees/{employee_id}/vacations", response_model=List[VacationPlan])
+async def get_employee_vacations(
+    employee_id: str,
+    current_user: dict = Depends(get_current_active_user),
+):
+    current_eid = await _get_user_employee_id(current_user)
+    if current_user.get("role") != "admin" and employee_id != current_eid:
+        raise HTTPException(403, "Sin permisos para consultar vacaciones de otros empleados.")
+    return await _get_vacations_for_employee(employee_id)
+
+
+@router.post("/employees/{employee_id}/vacations", response_model=VacationPlan)
+async def create_employee_vacation(
+    employee_id: str,
+    payload: VacationPlanCreate,
+    current_user: dict = Depends(require_admin),
+):
+    try:
+        start = _parse_iso_date(payload.start_date)
+        end = _parse_iso_date(payload.end_date)
+    except Exception:
+        raise HTTPException(400, "Fechas de vacaciones inválidas")
+
+    if end < start:
+        raise HTTPException(400, "La fecha fin de vacaciones no puede ser menor que inicio.")
+
+    doc = {
+        "id": str(uuid4()),
+        "employee_id": employee_id,
+        "start_date": payload.start_date,
+        "end_date": payload.end_date,
+        "created_at": _now_iso(),
+    }
+    await db.vacation_plans.insert_one(dict(doc))
+    return doc
+
+
+@router.delete("/employees/{employee_id}/vacations/{vacation_id}")
+async def delete_employee_vacation(
+    employee_id: str,
+    vacation_id: str,
+    current_user: dict = Depends(require_admin),
+):
+    res = await db.vacation_plans.delete_one({"id": vacation_id, "employee_id": employee_id})
     return {"removed": True, "deleted_count": res.deleted_count}
 
 
@@ -467,8 +623,11 @@ async def get_current_session(current_user: dict = Depends(get_current_active_us
     session = await _get_active_session(eid)
 
     assignments = await _get_assignments_for_employee(eid)
+    vacations = await _get_vacations_for_employee(eid)
     today = date.today()
-    assignment = _pick_assignment_for_date(assignments, today)
+
+    on_vacation = any(_vacation_active_on(v, today) for v in vacations)
+    assignment = None if on_vacation else _pick_assignment_for_date(assignments, today)
 
     schedule = None
     if assignment:
@@ -486,6 +645,7 @@ async def get_current_session(current_user: dict = Depends(get_current_active_us
         "schedule": schedule,
         "assignment": assignment,
         "assigned": bool(assignment),
+        "on_vacation": on_vacation,
         "planned_seconds_today": planned,
         "server_time": _now_iso(),
     }
@@ -599,12 +759,17 @@ async def attendance_summary(
     schedules = await db.schedules.find({"id": {"$in": schedule_ids}}, {"_id": 0}).to_list(2000)
     schedules_by_id = {s["id"]: s for s in schedules}
 
+    vacations = await _get_vacations_for_employee(eid)
+
     planned_seconds = 0
     try:
         d_from = date.fromisoformat(date_from)
         d_to = date.fromisoformat(date_to)
         cur = d_from
         while cur <= d_to:
+            if any(_vacation_active_on(v, cur) for v in vacations):
+                cur += timedelta(days=1)
+                continue
             assign = _pick_assignment_for_date(assignments, cur)
             schedule_for_day = schedules_by_id.get(assign.get("schedule_id")) if assign else None
             planned_seconds += _planned_seconds_for_day(schedule_for_day, cur.weekday())
