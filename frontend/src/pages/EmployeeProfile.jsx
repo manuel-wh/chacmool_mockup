@@ -919,7 +919,12 @@ const EmployeeProfile = () => {
                     return (
                       <div key={iso} className="border border-slate-200 rounded-xl h-[320px] relative bg-slate-50 overflow-hidden">
                         {segs.map((s) => (
-                          <div key={s.id} className={`absolute left-2 right-2 rounded-md ${s.color} hover:opacity-85`} style={{ top: `${s.top}%`, height: `${Math.max(2, s.height)}%` }} title={`${s.startLabel} - ${s.endLabel}`} />
+                          <div key={s.id} className="group absolute left-2 right-2" style={{ top: `${s.top}%`, height: `${Math.max(2, s.height)}%` }}>
+                            <div className={`w-full h-full rounded-md ${s.color} hover:opacity-85`} />
+                            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-8 opacity-0 group-hover:opacity-100 transition px-2 py-1 rounded-md bg-slate-900 text-white text-[11px] whitespace-nowrap z-10">
+                              {s.startLabel} - {s.endLabel}
+                            </div>
+                          </div>
                         ))}
                       </div>
                     );

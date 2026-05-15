@@ -329,6 +329,32 @@ def _vacation_active_on(vacation: dict, day: date) -> bool:
     return start <= day <= end
 
 
+
+async def _apply_vacation_cut_to_assignments(employee_id: str, start_date: str, end_date: str):
+    vac_start = _parse_iso_date(start_date)
+    vac_end = _parse_iso_date(end_date)
+    assignments = await _get_assignments_for_employee(employee_id)
+
+    for a in assignments:
+      a_start = _parse_iso_date(a.get("assigned_from"))
+      a_end = _to_end_date(a.get("assigned_to"), bool(a.get("no_end")))
+
+      if not _ranges_overlap(a_start, a_end, vac_start, vac_end):
+          continue
+
+      if a_start < vac_start:
+          new_end = vac_start - timedelta(days=1)
+          if new_end < a_start:
+              await db.employee_schedules.delete_one({"id": a.get("id"), "employee_id": employee_id})
+          else:
+              await db.employee_schedules.update_one(
+                  {"id": a.get("id"), "employee_id": employee_id},
+                  {"$set": {"assigned_to": new_end.isoformat(), "no_end": False}},
+              )
+      else:
+          await db.employee_schedules.delete_one({"id": a.get("id"), "employee_id": employee_id})
+
+
 def _assignment_conflicts_with_vacations(assignment: dict, vacations: List[dict]) -> bool:
     start = _parse_iso_date(assignment.get("assigned_from"))
     end = _to_end_date(assignment.get("assigned_to"), bool(assignment.get("no_end")))
@@ -588,6 +614,7 @@ async def create_employee_vacation(
         "created_at": _now_iso(),
     }
     await db.vacation_plans.insert_one(dict(doc))
+    await _apply_vacation_cut_to_assignments(employee_id, payload.start_date, payload.end_date)
     return doc
 
 
@@ -656,6 +683,37 @@ async def clock_in(current_user: dict = Depends(get_current_active_user)):
     eid = await _get_user_employee_id(current_user)
     return await _clock_in_employee(eid, current_user.get("name"), device="panel_web")
 
+
+
+
+@router.put("/employees/{employee_id}/vacations/{vacation_id}", response_model=VacationPlan)
+async def update_employee_vacation(
+    employee_id: str,
+    vacation_id: str,
+    payload: VacationPlanCreate,
+    current_user: dict = Depends(require_admin),
+):
+    try:
+        start = _parse_iso_date(payload.start_date)
+        end = _parse_iso_date(payload.end_date)
+    except Exception:
+        raise HTTPException(400, "Fechas de vacaciones inválidas")
+
+    if end < start:
+        raise HTTPException(400, "La fecha fin de vacaciones no puede ser menor que inicio.")
+
+    existing = await db.vacation_plans.find_one({"id": vacation_id, "employee_id": employee_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Vacation plan not found")
+
+    await db.vacation_plans.update_one(
+        {"id": vacation_id, "employee_id": employee_id},
+        {"$set": {"start_date": payload.start_date, "end_date": payload.end_date}},
+    )
+
+    await _apply_vacation_cut_to_assignments(employee_id, payload.start_date, payload.end_date)
+    updated = await db.vacation_plans.find_one({"id": vacation_id, "employee_id": employee_id}, {"_id": 0})
+    return updated
 
 @router.post("/attendance/pause")
 async def pause(current_user: dict = Depends(get_current_active_user)):

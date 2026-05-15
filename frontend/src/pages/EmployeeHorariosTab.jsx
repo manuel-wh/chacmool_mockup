@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, X, Check } from 'lucide-react';
 import { asistenciaAPI } from '../services/api';
 import { DAY_LABELS, MONTH_LABELS, toISODate, secondsToHM, addDays, startOfWeek, hhmmToMinutes } from '../utils/asistencia';
@@ -19,6 +19,7 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
 
   const [editingAssignment, setEditingAssignment] = useState(null);
   const [showVacationModal, setShowVacationModal] = useState(false);
+  const [editingVacation, setEditingVacation] = useState(null);
   const monthRange = useMemo(() => ({
     from: new Date(anchor.getFullYear(), anchor.getMonth(), 1),
     to: new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0),
@@ -128,6 +129,7 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
         employeeId={employeeId}
         onChanged={fetchAll}
         onEdit={(a) => setEditingAssignment(a)}
+        onEditVacation={(v) => setEditingVacation(v)}
       />
 
       {/* Calendario mensual */}
@@ -157,6 +159,15 @@ const EmployeeHorariosTab = ({ employeeId, isAdmin }) => {
           onSaved={() => { setShowVacationModal(false); fetchAll(); }}
         />
       )}
+
+      {editingVacation && (
+        <VacationModal
+          employeeId={employeeId}
+          initial={editingVacation}
+          onClose={() => setEditingVacation(null)}
+          onSaved={() => { setEditingVacation(null); fetchAll(); }}
+        />
+      )}
     </div>
   );
 };
@@ -180,7 +191,7 @@ const SummaryCard = ({ title, worked_seconds, planned_seconds, testId }) => {
   );
 };
 
-const AssignmentsList = ({ assignments, vacations, isAdmin, employeeId, onChanged, onEdit }) => {
+const AssignmentsList = ({ assignments, vacations, isAdmin, employeeId, onChanged, onEdit, onEditVacation }) => {
   const removeOne = async (assignmentId) => {
     try {
       await asistenciaAPI.removeEmployeeSchedule(employeeId, assignmentId);
@@ -242,20 +253,29 @@ const AssignmentsList = ({ assignments, vacations, isAdmin, employeeId, onChange
               <div key={v.id} className="border border-rose-200 bg-rose-50 rounded-xl p-3 flex items-center justify-between">
                 <div className="text-sm text-rose-800 font-medium">Vacaciones: {v.start_date} → {v.end_date}</div>
                 {isAdmin && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        await asistenciaAPI.deleteEmployeeVacation(employeeId, v.id);
-                        onChanged();
-                      } catch (e) {
-                        alert(e.message);
-                      }
-                    }}
-                    className="text-xs px-2 py-1 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-100"
-                    data-testid={`remove-vacation-${v.id}`}
-                  >
-                    Eliminar
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onEditVacation(v)}
+                      className="text-xs px-2 py-1 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-100"
+                      data-testid={`edit-vacation-${v.id}`}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await asistenciaAPI.deleteEmployeeVacation(employeeId, v.id);
+                          onChanged();
+                        } catch (e) {
+                          alert(e.message);
+                        }
+                      }}
+                      className="text-xs px-2 py-1 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-100"
+                      data-testid={`remove-vacation-${v.id}`}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -363,6 +383,127 @@ const CalendarMonth = ({ anchor, assignments, vacations }) => {
   );
 };
 
+const SmartDatePicker = ({ value, onChange, disabled = false, testId }) => {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState('day'); // day | month | year
+  const [viewDate, setViewDate] = useState(() => value ? new Date(`${value}T00:00:00`) : new Date());
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (value) setViewDate(new Date(`${value}T00:00:00`));
+  }, [value]);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const selected = value ? new Date(`${value}T00:00:00`) : null;
+  const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+  const monthEnd = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0);
+
+  const dayOffset = (monthStart.getDay() + 6) % 7;
+  const days = [];
+  for (let i = 0; i < dayOffset; i += 1) days.push(null);
+  for (let d = 1; d <= monthEnd.getDate(); d += 1) {
+    days.push(new Date(viewDate.getFullYear(), viewDate.getMonth(), d));
+  }
+
+  const months = MONTH_LABELS.map((m, idx) => ({ label: m.slice(0, 3), index: idx }));
+  const yearBase = Math.floor(viewDate.getFullYear() / 12) * 12;
+  const years = Array.from({ length: 12 }, (_, i) => yearBase + i);
+
+  const formatLabel = selected ? selected.toLocaleDateString('es-ES') : 'Seleccionar fecha';
+
+  const cycleMode = () => {
+    if (mode === 'day') setMode('month');
+    else if (mode === 'month') setMode('year');
+    else setMode('day');
+  };
+
+  return (
+    <div className="relative" ref={ref} data-testid={testId}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        className="w-full text-left border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-slate-50"
+      >
+        {formatLabel}
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute z-50 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <button type="button" onClick={() => {
+              if (mode === 'day') setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+              if (mode === 'month') setViewDate((d) => new Date(d.getFullYear() - 1, d.getMonth(), 1));
+              if (mode === 'year') setViewDate((d) => new Date(d.getFullYear() - 12, d.getMonth(), 1));
+            }} className="px-2 text-slate-500 hover:text-slate-900">‹</button>
+            <button type="button" onClick={cycleMode} className="text-sm font-medium text-slate-800 capitalize">
+              {mode === 'day' && viewDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
+              {mode === 'month' && `${viewDate.getFullYear()}`}
+              {mode === 'year' && `${yearBase} - ${yearBase + 11}`}
+            </button>
+            <button type="button" onClick={() => {
+              if (mode === 'day') setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+              if (mode === 'month') setViewDate((d) => new Date(d.getFullYear() + 1, d.getMonth(), 1));
+              if (mode === 'year') setViewDate((d) => new Date(d.getFullYear() + 12, d.getMonth(), 1));
+            }} className="px-2 text-slate-500 hover:text-slate-900">›</button>
+          </div>
+
+          {mode === 'day' && (
+            <>
+              <div className="grid grid-cols-7 text-[11px] text-slate-400 mb-1">
+                {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d) => <div key={d} className="text-center">{d}</div>)}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {days.map((d, idx) => (
+                  d ? (
+                    <button
+                      key={`${d.toISOString()}-${idx}`}
+                      type="button"
+                      onClick={() => { onChange(toISODate(d)); setOpen(false); }}
+                      className={`h-8 rounded-lg text-sm ${selected && toISODate(d) === toISODate(selected) ? 'bg-slate-900 text-white' : 'hover:bg-slate-100 text-slate-700'}`}
+                    >
+                      {d.getDate()}
+                    </button>
+                  ) : <div key={`empty-${idx}`} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {mode === 'month' && (
+            <div className="grid grid-cols-3 gap-2">
+              {months.map((m) => (
+                <button key={m.label} type="button" onClick={() => { setViewDate(new Date(viewDate.getFullYear(), m.index, 1)); setMode('day'); }} className="py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {mode === 'year' && (
+            <div className="grid grid-cols-3 gap-2">
+              {years.map((y) => (
+                <button key={y} type="button" onClick={() => { setViewDate(new Date(y, viewDate.getMonth(), 1)); setMode('month'); }} className="py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">
+                  {y}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 const AssignModal = ({ employeeId, onClose, onSaved }) => {
   const [list, setList] = useState([]);
   const [picked, setPicked] = useState('');
@@ -390,6 +531,8 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
     setBusy(true);
     try {
       await asistenciaAPI.assignSchedule(employeeId, picked, assignedFrom, noEnd ? null : assignedTo, noEnd, alternateMonthly);
+
+
       onSaved();
     } catch (e) {
       setErr(e.message === 'HTTP 400' ? 'Este horario se sobrelapa con una asignación existente o tiene fechas inválidas.' : e.message);
@@ -430,13 +573,7 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
           ))}
           <div className="border border-slate-200 rounded-xl p-3">
             <label className="block text-xs font-medium text-slate-700 mb-1">Fecha de inicio</label>
-            <input
-              type="date"
-              value={assignedFrom}
-              onChange={(e) => setAssignedFrom(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-              data-testid="assign-from"
-            />
+            <SmartDatePicker value={assignedFrom} onChange={setAssignedFrom} testId="assign-from" />
           </div>
 
           <div className="border border-slate-200 rounded-xl p-3">
@@ -451,14 +588,7 @@ const AssignModal = ({ employeeId, onClose, onSaved }) => {
                 <span className={`block w-4 h-4 bg-white rounded-full transform transition ${noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
               </button>
             </div>
-            <input
-              type="date"
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              disabled={noEnd}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50"
-              data-testid="assign-to"
-            />
+            <SmartDatePicker value={assignedTo} onChange={setAssignedTo} disabled={noEnd} testId="assign-to" />
           </div>
 
           <div className="border border-slate-200 rounded-xl p-3">
@@ -533,7 +663,7 @@ const EditAssignmentModal = ({ employeeId, assignment, onClose, onSaved }) => {
           {!isAlternated && (
             <div className="border border-slate-200 rounded-xl p-3">
               <label className="block text-xs font-medium text-slate-700 mb-1">Fecha de inicio</label>
-              <input type="date" value={assignedFrom} onChange={(e) => setAssignedFrom(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <SmartDatePicker value={assignedFrom} onChange={setAssignedFrom} testId="edit-assignment-from" />
             </div>
           )}
 
@@ -549,14 +679,14 @@ const EditAssignmentModal = ({ employeeId, assignment, onClose, onSaved }) => {
                   <span className={`block w-4 h-4 bg-white rounded-full transform transition ${noEnd ? 'translate-x-5' : 'translate-x-1'}`} />
                 </button>
               </div>
-              <input type="date" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} disabled={noEnd} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50" />
+              <SmartDatePicker value={assignedTo} onChange={setAssignedTo} disabled={noEnd} testId="edit-assignment-to" />
             </div>
           )}
 
           {isAlternated && (
             <div className="border border-slate-200 rounded-xl p-3">
               <label className="block text-xs font-medium text-slate-700 mb-1">Fecha de fin</label>
-              <input type="date" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <SmartDatePicker value={assignedTo} onChange={setAssignedTo} testId="edit-alternate-end" />
             </div>
           )}
         </div>
@@ -571,9 +701,9 @@ const EditAssignmentModal = ({ employeeId, assignment, onClose, onSaved }) => {
   );
 };
 
-const VacationModal = ({ employeeId, onClose, onSaved }) => {
-  const [startDate, setStartDate] = useState(toISODate(new Date()));
-  const [endDate, setEndDate] = useState(toISODate(new Date()));
+const VacationModal = ({ employeeId, initial = null, onClose, onSaved }) => {
+  const [startDate, setStartDate] = useState(initial?.start_date || toISODate(new Date()));
+  const [endDate, setEndDate] = useState(initial?.end_date || toISODate(new Date()));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -581,7 +711,11 @@ const VacationModal = ({ employeeId, onClose, onSaved }) => {
     setBusy(true);
     setErr('');
     try {
-      await asistenciaAPI.createEmployeeVacation(employeeId, startDate, endDate);
+      if (initial?.id) {
+        await asistenciaAPI.updateEmployeeVacation(employeeId, initial.id, startDate, endDate);
+      } else {
+        await asistenciaAPI.createEmployeeVacation(employeeId, startDate, endDate);
+      }
       onSaved();
     } catch (e) {
       setErr(e.message);
@@ -594,24 +728,24 @@ const VacationModal = ({ employeeId, onClose, onSaved }) => {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="vacation-modal">
       <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-slate-900" style={{ fontFamily: 'Outfit' }}>Plan de vacaciones</h3>
+          <h3 className="text-xl font-semibold text-slate-900" style={{ fontFamily: 'Outfit' }}>{initial ? 'Editar vacaciones' : 'Plan de vacaciones'}</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
         </div>
         <div className="p-6 space-y-3">
           {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</div>}
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Fecha inicio</label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            <SmartDatePicker value={startDate} onChange={setStartDate} testId="vacation-start" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Fecha fin</label>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            <SmartDatePicker value={endDate} onChange={setEndDate} testId="vacation-end" />
           </div>
         </div>
         <div className="border-t border-slate-200 px-6 py-4 flex gap-2 justify-end">
           <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-xl hover:bg-slate-50">Cancelar</button>
           <button onClick={save} disabled={busy} className="px-4 py-2 text-sm bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50">
-            {busy ? 'Guardando…' : 'Guardar vacaciones'}
+            {busy ? 'Guardando…' : (initial ? 'Guardar cambios' : 'Guardar vacaciones')}
           </button>
         </div>
       </div>

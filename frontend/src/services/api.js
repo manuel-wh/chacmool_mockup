@@ -596,6 +596,10 @@ export const asistenciaAPI = {
     `/api/asistencia/employees/${employeeId}/vacations`,
     { method: 'POST', body: JSON.stringify({ start_date: startDate, end_date: endDate }) }
   ),
+  updateEmployeeVacation: (employeeId, vacationId, startDate, endDate) => _req(
+    `/api/asistencia/employees/${employeeId}/vacations/${vacationId}`,
+    { method: 'PUT', body: JSON.stringify({ start_date: startDate, end_date: endDate }) }
+  ),
   deleteEmployeeVacation: (employeeId, vacationId) => _req(
     `/api/asistencia/employees/${employeeId}/vacations/${vacationId}`,
     { method: 'DELETE' }
